@@ -31,9 +31,11 @@ import com.nekonyan.assistant.core.util.NekoMode
         // yolo.ds 第 124~130 行：模型管理的 8 张表
         YoloModelEntity::class, YoloModelVersionEntity::class, YoloModelSwitchRecordEntity::class,
         YoloModelImportRecordEntity::class, YoloModelExportRecordEntity::class,
-        YoloModelUpdateRecordEntity::class, YoloModelPerformanceEntity::class, YoloModelConfigEntity::class
+        YoloModelUpdateRecordEntity::class, YoloModelPerformanceEntity::class, YoloModelConfigEntity::class,
+        // M15：声明式插件登记
+        PluginRecordEntity::class
     ],
-    version = 2,
+    version = 3,
     // 关闭 schema 导出：本工程尚无迁移需求。开启时需要确保 schemas/ 目录
     // 已存在且随仓库提交，否则 Room 会报 "Empty schema file"（CI 上踩过这个坑）。
     // 将来做数据库迁移时：改成 true + ksp arg room.schemaLocation + 提交 app/schemas/。
@@ -54,6 +56,7 @@ abstract class NekoDatabase : RoomDatabase() {
     abstract fun environmentDao(): EnvironmentDao
     abstract fun runModeDao(): RunModeDao
     abstract fun yoloModelDao(): YoloModelDao
+    abstract fun pluginRecordDao(): PluginRecordDao
 
     companion object {
         const val DB_NAME = "nekonyan.db"

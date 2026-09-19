@@ -535,3 +535,30 @@ data class YoloModelConfigEntity(
         const val CONFIG_ID = 1
     }
 }
+
+// ============================ 插件（修改：M15，方案 A 声明式） ============================
+
+/**
+ * 插件登记（需求：列表/已安装/已启用/已禁用/可更新/日志 六个视图）。
+ * 清单原文整份存 [manifestJson]，避免字段增删时又要改表；
+ * 表里只抽出需要检索/排序的列。
+ */
+@Entity(tableName = "plugin_record")
+data class PluginRecordEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val version: String,
+    val author: String = "",
+    val description: String = "",
+    /** 逗号分隔的已授权权限 */
+    val grantedPermissions: String = "",
+    val enabled: Boolean = false,
+    val manifestJson: String,
+    /** local | import */
+    val source: String = "local",
+    val installedAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    fun grantedList(): List<String> =
+        grantedPermissions.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+}

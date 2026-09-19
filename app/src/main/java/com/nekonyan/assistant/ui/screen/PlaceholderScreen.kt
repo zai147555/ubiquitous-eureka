@@ -71,13 +71,3 @@ fun PlaceholderScreen(
 }
 
 // ---------------- 各功能页（按里程碑排期） ----------------
-
-@Composable
-fun PluginScreen(onBack: () -> Unit) = PlaceholderScreen(
-    title = "插件",
-    milestone = "计划里程碑 M15",
-    description = "插件系统含 列表/已安装/已启用/已禁用/可更新/日志 六个视图；\n" +
-            "插件可改所有 UI，但**不能破坏紧急停止、权限入口、日志只读与安全提示**。\n" +
-            "权限需单独授权（plugin 表与权限字段已就绪）。",
-    onBack = onBack
-)

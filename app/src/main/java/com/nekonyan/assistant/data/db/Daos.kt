@@ -502,3 +502,30 @@ interface YoloModelDao {
     @Upsert
     suspend fun upsertConfig(config: YoloModelConfigEntity)
 }
+
+// ============================ 插件（M15） ============================
+
+@Dao
+interface PluginRecordDao {
+
+    @Query("SELECT * FROM plugin_record ORDER BY installedAt DESC")
+    fun observeAll(): Flow<List<PluginRecordEntity>>
+
+    @Query("SELECT * FROM plugin_record ORDER BY installedAt DESC")
+    suspend fun all(): List<PluginRecordEntity>
+
+    @Query("SELECT * FROM plugin_record WHERE id = :id")
+    suspend fun byId(id: String): PluginRecordEntity?
+
+    @Upsert
+    suspend fun upsert(record: PluginRecordEntity)
+
+    @Query("UPDATE plugin_record SET enabled = :enabled, updatedAt = :at WHERE id = :id")
+    suspend fun setEnabled(id: String, enabled: Boolean, at: Long)
+
+    @Query("UPDATE plugin_record SET grantedPermissions = :granted, updatedAt = :at WHERE id = :id")
+    suspend fun setGranted(id: String, granted: String, at: Long)
+
+    @Query("DELETE FROM plugin_record WHERE id = :id")
+    suspend fun delete(id: String)
+}
