@@ -27,6 +27,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -63,6 +64,7 @@ import kotlinx.coroutines.launch
  * 说明：主界面刻意不放返回键与标题 —— 侧边菜单是唯一导航入口，
  * 这与需求一致，也避免了「标题挤占聊天区」的 QQ 布局问题。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     onOpenRoute: (NekoRoute) -> Unit,

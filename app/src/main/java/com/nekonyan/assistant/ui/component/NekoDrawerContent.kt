@@ -13,7 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
@@ -44,7 +44,7 @@ val NekoDrawerEntries: List<DrawerEntry> = listOf(
     DrawerEntry(NekoRoute.CHAT, Icons.Outlined.Article),
     DrawerEntry(NekoRoute.KNOWLEDGE, Icons.Filled.MenuBook),
     DrawerEntry(NekoRoute.TASKS, Icons.Filled.Build),
-    DrawerEntry(NekoRoute.MUSIC, Icons.Filled.LibraryMusic),
+    DrawerEntry(NekoRoute.MUSIC, Icons.Filled.MusicNote),
     DrawerEntry(NekoRoute.PLUGIN, Icons.Filled.Extension),
     DrawerEntry(NekoRoute.CONFIG, Icons.Filled.Tune),
     DrawerEntry(NekoRoute.SETTINGS, Icons.Filled.Settings),

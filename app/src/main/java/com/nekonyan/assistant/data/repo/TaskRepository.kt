@@ -1,6 +1,5 @@
 package com.nekonyan.assistant.data.repo
 
-import com.nekonyan.assistant.data.db.NekoMode
 import com.nekonyan.assistant.data.db.Task
 import com.nekonyan.assistant.data.db.TaskDao
 import kotlinx.coroutines.flow.Flow

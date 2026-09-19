@@ -8,6 +8,7 @@ import com.nekonyan.assistant.core.net.RequestSigner
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -314,28 +315,28 @@ object DataCollector {
 
         private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
-        fun add(ctx: Context, r: SampleRecord) = lock.synchronized {
+        fun add(ctx: Context, r: SampleRecord) = synchronized(lock) {
             val arr = allLocked(ctx).toMutableList()
             arr.add(r)
             saveLocked(ctx, arr)
         }
 
-        fun all(ctx: Context): List<SampleRecord> = lock.synchronized { allLocked(ctx) }
+        fun all(ctx: Context): List<SampleRecord> = synchronized(lock) { allLocked(ctx) }
 
         fun pending(ctx: Context, limit: Int): List<SampleRecord> =
-            lock.synchronized { allLocked(ctx).filter { !it.uploaded }.take(limit) }
+            synchronized(lock) { allLocked(ctx).filter { !it.uploaded }.take(limit) }
 
-        fun remove(ctx: Context, id: String) = lock.synchronized {
+        fun remove(ctx: Context, id: String) = synchronized(lock) {
             saveLocked(ctx, allLocked(ctx).filterNot { it.id == id })
         }
 
-        fun removeAll(ctx: Context, ids: Collection<String>) = lock.synchronized {
+        fun removeAll(ctx: Context, ids: Collection<String>) = synchronized(lock) {
             if (ids.isEmpty()) return@Synchronized
             val set = ids.toHashSet()
             saveLocked(ctx, allLocked(ctx).filterNot { it.id in set })
         }
 
-        fun markUploaded(ctx: Context, ids: Collection<String>) = lock.synchronized {
+        fun markUploaded(ctx: Context, ids: Collection<String>) = synchronized(lock) {
             if (ids.isEmpty()) return@Synchronized
             val set = ids.toHashSet()
             val list = allLocked(ctx).map {
@@ -344,7 +345,7 @@ object DataCollector {
             saveLocked(ctx, list)
         }
 
-        fun incTry(ctx: Context, ids: Collection<String>) = lock.synchronized {
+        fun incTry(ctx: Context, ids: Collection<String>) = synchronized(lock) {
             if (ids.isEmpty()) return@Synchronized
             val set = ids.toHashSet()
             val list = allLocked(ctx).map {

@@ -45,7 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.nekonyan.assistant.data.db.NekoMode
 import com.nekonyan.assistant.data.db.Task
 import com.nekonyan.assistant.ui.theme.NekoTheme
 import java.text.SimpleDateFormat

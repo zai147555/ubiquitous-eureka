@@ -79,7 +79,7 @@ class UploadWorker(appContext: Context, params: WorkerParameters) : Worker(appCo
 
             val builder = Request.Builder().url(url).post(mp.build())
             // ★ 只签 payload 字段原文（multipart boundary 随机，无法对整个 body 复现哈希）
-            RequestSigner.signInto(builder, "POST", url, token, secret, signedBody = payload)
+            RequestSigner(token, secret).signInto(builder, "POST", url, signedBody = payload)
 
             http.newCall(builder.build()).execute().use { resp ->
                 val text = resp.body?.string().orEmpty()
@@ -107,7 +107,7 @@ class UploadWorker(appContext: Context, params: WorkerParameters) : Worker(appCo
 
                     code == 400 -> {
                         // ★ 关键修正：服务端判定不合规的样本，按 id 精确丢弃，绝不重传
-                        val rejected = json.optJSONArray("rejects") ?: JSONArray()
+                        val rejected = json?.optJSONArray("rejects") ?: JSONArray()
                         val sentIds = pending.map { it.id }.toHashSet()
                         val hardReject = HashSet<String>()
                         for (i in 0 until rejected.length()) {

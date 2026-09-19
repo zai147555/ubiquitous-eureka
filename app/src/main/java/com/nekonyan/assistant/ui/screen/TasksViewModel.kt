@@ -8,7 +8,6 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nekonyan.assistant.NekoApp
 import com.nekonyan.assistant.core.log.NekoLog
 import com.nekonyan.assistant.data.db.NekoDatabase
-import com.nekonyan.assistant.data.db.NekoMode
 import com.nekonyan.assistant.data.db.Task
 import com.nekonyan.assistant.data.repo.TaskRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi

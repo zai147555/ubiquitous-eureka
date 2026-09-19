@@ -218,7 +218,8 @@ class ModelUpdater(
 
                 val builder = Request.Builder().url(url)
                 if (existed > 0) builder.header("Range", "bytes=$existed-")
-                signer?.sign("GET", url, builder)
+                // 签名：走 RequestSigner 的统一实现（GET 无 body，signedBody = null）
+                signer?.signInto(builder, "GET", url)
 
                 http.newCall(builder.build()).execute().use { resp ->
                     if (resp.code == 416) {           // Range 越界 → 本地文件已损坏，重下

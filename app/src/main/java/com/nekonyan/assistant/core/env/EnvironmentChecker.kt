@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.nekonyan.assistant.core.log.NekoLog
+import com.nekonyan.assistant.core.security.SecurityStore
 import com.nekonyan.assistant.data.db.EnvironmentCheckRecord
 import com.nekonyan.assistant.data.db.NekoDatabase
 
