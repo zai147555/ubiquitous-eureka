@@ -13,6 +13,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.nekonyan.assistant.NekoApp
+import com.nekonyan.assistant.core.perm.PermissionGuideStore
+import com.nekonyan.assistant.ui.component.PermissionGuideDialog
 import com.nekonyan.assistant.ui.screen.ChatViewModel
 import com.nekonyan.assistant.ui.screen.ConfigScreen
 import com.nekonyan.assistant.ui.screen.KnowledgeScreen
@@ -56,6 +59,10 @@ fun NekoAppRoot() {
         ) {
             var route by remember { mutableStateOf(NekoRoute.CHAT) }
             var backToDrawer by remember { mutableStateOf(false) }
+
+            // 需求：首次启动显示权限引导；设置页可随时重新进入
+            val guideStore = remember { PermissionGuideStore(NekoApp.context()) }
+            var showPermissionGuide by remember { mutableStateOf(!guideStore.isGuided()) }
 
             // 需求：从设置等页面退出 → 回聊天页并展开侧边栏（侧边栏是唯一导航入口，
             // 回到一个"什么都没有"的聊天页会逼用户再点一次三条杠）
@@ -102,9 +109,17 @@ fun NekoAppRoot() {
                 NekoRoute.CONFIG -> ConfigScreen(onBack = backToChat)
                 NekoRoute.SETTINGS -> SettingsScreen(
                     onBack = backToChat,
-                    themeVm = themeVm
+                    themeVm = themeVm,
+                    onOpenPermissionGuide = { showPermissionGuide = true }
                 )
                 NekoRoute.LOGS -> LogScreen(onBack = backToChat)
+            }
+
+            if (showPermissionGuide) {
+                PermissionGuideDialog(
+                    onFinish = { guideStore.markGuided(); showPermissionGuide = false },
+                    onSkip = { guideStore.markGuided(); showPermissionGuide = false }
+                )
             }
         }
     }

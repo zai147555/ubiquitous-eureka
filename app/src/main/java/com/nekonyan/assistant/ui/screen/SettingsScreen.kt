@@ -42,6 +42,7 @@ import com.nekonyan.assistant.ui.theme.MotionLevel
 import com.nekonyan.assistant.ui.theme.NekoTheme
 import com.nekonyan.assistant.ui.theme.NekoThemeId
 import com.nekonyan.assistant.ui.theme.ThemeViewModel
+import androidx.compose.material.icons.filled.Security
 
 /**
  * 设置页（需求相关项）：
@@ -54,7 +55,9 @@ import com.nekonyan.assistant.ui.theme.ThemeViewModel
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    themeVm: ThemeViewModel = viewModel(factory = ThemeViewModel.Factory)
+    themeVm: ThemeViewModel = viewModel(factory = ThemeViewModel.Factory),
+    /** 需求（修改.ds 第五项）：稍后可从设置里重新进入权限引导 */
+    onOpenPermissionGuide: () -> Unit = {}
 ) {
     val appearance by themeVm.settings.collectAsStateWithLifecycle()
     val motion by themeVm.effectiveMotion.collectAsStateWithLifecycle()
@@ -64,6 +67,11 @@ fun SettingsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("设置") },
+                actions = {
+                    IconButton(onClick = onOpenPermissionGuide) {
+                        Icon(Icons.Filled.Security, contentDescription = "权限引导")
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
