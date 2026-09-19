@@ -3,7 +3,7 @@ package com.nekonyan.assistant
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.nekonyan.assistant.data.db.NekoDatabase
-import com.nekonyan.assistant.data.db.NekoMode
+import com.nekonyan.assistant.core.util.NekoMode
 import com.nekonyan.assistant.data.db.Task
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest

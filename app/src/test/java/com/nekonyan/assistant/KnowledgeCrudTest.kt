@@ -5,7 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.nekonyan.assistant.data.db.KnowledgeCategory
 import com.nekonyan.assistant.data.db.KnowledgeItem
 import com.nekonyan.assistant.data.db.NekoDatabase
-import com.nekonyan.assistant.data.db.NekoMode
+import com.nekonyan.assistant.core.util.NekoMode
 import com.nekonyan.assistant.data.repo.KnowledgeRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest

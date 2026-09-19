@@ -3,7 +3,7 @@ package com.nekonyan.assistant
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.nekonyan.assistant.data.db.NekoDatabase
-import com.nekonyan.assistant.data.db.NekoMode
+import com.nekonyan.assistant.core.util.NekoMode
 import com.nekonyan.assistant.ui.theme.MotionLevel
 import com.nekonyan.assistant.ui.theme.MotionPolicy
 import com.nekonyan.assistant.ui.theme.NekoMotion
@@ -42,7 +42,7 @@ class ThemeAndMotionTest {
     fun `四套主题都有配色方案`() {
         NekoThemeId.entries.forEach { id ->
             val scheme = colorSchemeFor(id)
-            assertNotEquals("$id 的主色不应为默认值", 0, scheme.primary.value.toLong())
+            assertNotEquals("$id 的主色不应为默认值", 0uL, scheme.primary.value)
             val extra = extraColorsFor(id)
             assertTrue("$id 必须有紧急停止色", extra.emergency.value != 0L)
         }

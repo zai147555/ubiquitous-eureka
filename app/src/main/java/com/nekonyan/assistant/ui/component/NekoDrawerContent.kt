@@ -17,7 +17,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,14 +41,14 @@ import com.nekonyan.assistant.ui.screen.NekoRoute
 data class DrawerEntry(val route: NekoRoute, val icon: ImageVector)
 
 val NekoDrawerEntries: List<DrawerEntry> = listOf(
-    DrawerEntry(NekoRoute.CHAT, Icons.Outlined.Article),
+    DrawerEntry(NekoRoute.CHAT, Icons.AutoMirrored.Outlined.Article),
     DrawerEntry(NekoRoute.KNOWLEDGE, Icons.Filled.MenuBook),
     DrawerEntry(NekoRoute.TASKS, Icons.Filled.Build),
     DrawerEntry(NekoRoute.MUSIC, Icons.Filled.MusicNote),
     DrawerEntry(NekoRoute.PLUGIN, Icons.Filled.Extension),
     DrawerEntry(NekoRoute.CONFIG, Icons.Filled.Tune),
     DrawerEntry(NekoRoute.SETTINGS, Icons.Filled.Settings),
-    DrawerEntry(NekoRoute.LOGS, Icons.Outlined.Article)
+    DrawerEntry(NekoRoute.LOGS, Icons.AutoMirrored.Outlined.Article)
 )
 
 @Composable
