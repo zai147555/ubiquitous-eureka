@@ -16,6 +16,14 @@
 
 ## 二、服务端部署（Windows 挂机宝）
 
+> **一键方式**：把整个仓库目录复制到挂机宝，再把设备上的
+> `.verify-chat/ed25519_private.hex` 复制到仓库根目录，然后双击
+> `tools/deploy_model_server.bat`。它会：装依赖 → 从 `模型/`（或 `docs/`）复制
+> `yolo11n.param/.bin/labels.txt` 到 `releases/v1/` → `setx` 写环境变量 →
+> 在 8100 端口起服务 → 自检 `/ping`。下面是不用脚本时的等价手工步骤。
+
+### 手工步骤
+
 ```cmd
 :: 1) 依赖
 python -m pip install fastapi "uvicorn[standard]" python-multipart cryptography -i https://pypi.tuna.tsinghua.edu.cn/simple
