@@ -48,6 +48,8 @@ import com.nekonyan.assistant.data.db.YoloModelEntity
 import com.nekonyan.assistant.data.repo.YoloModelRepository
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.runtime.LaunchedEffect
+import com.nekonyan.assistant.core.capture.ScreenCaptureService
 
 /**
  * YOLO 模型管理页（严格按工作区 `yolo.ds` 的页面结构）：
@@ -67,6 +69,15 @@ fun YoloModelScreen(
     var pendingExportId by remember { mutableStateOf<String?>(null) }
 
     // 导入：多选（.param + .bin [+ labels.txt/manifest.json]）
+    // 屏幕捕获授权回调：resultCode/data 必须原样交给前台服务（无法持久化）
+    val captureConsent = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == android.app.Activity.RESULT_OK && res.data != null) {
+            ScreenCaptureService.start(ctx, res.resultCode, res.data!!)
+        }
+    }
+
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> if (uris.isNotEmpty()) vm.importModels(uris) }
@@ -292,6 +303,47 @@ fun YoloModelScreen(
             }
 
             HorizontalDivider()
+
+            HorizontalDivider()
+
+            // ---------------- 屏幕捕获（M4） ----------------
+            SectionTitle("屏幕捕获（M4 · 本地识别）")
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    var capturing by remember { mutableStateOf(ScreenCaptureService.running) }
+                    var stats by remember { mutableStateOf(ScreenCaptureService.lastStats) }
+                    LaunchedEffect(capturing) {
+                        while (capturing) {
+                            stats = ScreenCaptureService.lastStats
+                            capturing = ScreenCaptureService.running
+                            kotlinx.coroutines.delay(1000)
+                        }
+                    }
+                    Text(
+                        "授权后由前台服务抓屏并本地跑模型（约 2 帧/秒，实测约 234ms/帧）。" +
+                            "系统每次开始捕获都要现场确认 —— 安卓不允许预先授权屏幕录制。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "状态：" + if (capturing) stats else "未运行",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (capturing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                val mpm = ctx.getSystemService(android.media.projection.MediaProjectionManager::class.java)
+                                runCatching { captureConsent.launch(mpm.createScreenCaptureIntent()) }
+                            },
+                            enabled = !capturing
+                        ) { Text("开始捕获") }
+                        OutlinedButton(
+                            onClick = { ScreenCaptureService.stop(ctx); capturing = false },
+                            enabled = capturing
+                        ) { Text("停止") }
+                    }
+                }
+            }
 
             // ---------------- 模型日志（只读） ----------------
             SectionTitle("模型日志（只读）")

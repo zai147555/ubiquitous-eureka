@@ -50,6 +50,15 @@ fun PermissionGuideDialog(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { states = PermissionChecker.allStates(ctx) }
 
+    // 屏幕录制无法预授权：这里真的把系统确认框调起来，让用户看到它是可用的、只是必须现场同意
+    var captureConfirmed by remember { mutableStateOf(false) }
+    val captureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        captureConfirmed = res.resultCode == android.app.Activity.RESULT_OK && res.data != null
+        states = PermissionChecker.allStates(ctx)
+    }
+
     val item = PermissionGuide.ITEMS[index]
     val state = states[item.key]
     val progress = PermissionGuide.progress(states)
@@ -103,7 +112,11 @@ fun PermissionGuideDialog(
                 TextButton(onClick = { states = PermissionChecker.allStates(ctx) }) { Text("刷新") }
                 OutlinedButton(onClick = {
                     val runtime = PermissionChecker.runtimePermissions(item.key)
-                    if (runtime.isNotEmpty()) {
+                    if (item.key == PermissionGuide.KEY_SCREEN_CAPTURE) {
+                        // 没有可申请的权限、也没有设置页 → 直接弹系统的投屏确认框
+                        val mpm = ctx.getSystemService(android.media.projection.MediaProjectionManager::class.java)
+                        runCatching { captureLauncher.launch(mpm.createScreenCaptureIntent()) }
+                    } else if (runtime.isNotEmpty()) {
                         runtimeLauncher.launch(runtime.toTypedArray())
                     } else {
                         PermissionChecker.jumpIntent(ctx, item.key)?.let { intent ->
