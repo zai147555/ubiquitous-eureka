@@ -114,6 +114,8 @@ class YoloModelViewModel(
     val state: StateFlow<YoloUiState> = _state.asStateFlow()
 
     init {
+        // 内置（加密）凭据：只在 Keystore 为空时注入，用户手填优先
+        runCatching { serviceStore.ensureBuiltinCredentials() }
         _state.update {
             it.copy(
                 serviceBase = serviceStore.baseUrl(),

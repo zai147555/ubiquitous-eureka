@@ -2,6 +2,7 @@ package com.nekonyan.assistant.data.repo
 
 import android.content.Context
 import com.nekonyan.assistant.core.log.NekoLog
+import com.nekonyan.assistant.core.security.BuiltinSecretStore
 import com.nekonyan.assistant.core.security.SecurityStore
 
 /**
@@ -19,6 +20,21 @@ class YoloServiceStore(context: Context) {
     fun baseUrl(): String = SecurityStore.getSecret(appContext, KEY_BASE).orEmpty()
 
     fun token(): String = SecurityStore.getSecret(appContext, KEY_TOKEN).orEmpty()
+
+    /**
+     * 首次运行把**内置（加密）凭据**写进 Keystore。
+     * 已有值（用户手填或上次注入）就完全不动 —— 手填优先，且绝不覆盖用户改过的地址。
+     */
+    fun ensureBuiltinCredentials() {
+        if (baseUrl().isNotBlank() || token().isNotBlank()) return
+        val pair = BuiltinSecretStore.load(appContext) ?: return
+        SecurityStore.putSecret(appContext, KEY_BASE, pair.first)
+        SecurityStore.putSecret(appContext, KEY_TOKEN, pair.second)
+        NekoLog.info(
+            NekoLog.MODULE_STORE, "builtin_cred_seeded",
+            "已注入内置服务地址 ${pair.first}（Token 长度 ${pair.second.length}，未打印）"
+        )
+    }
 
     fun enabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
 
