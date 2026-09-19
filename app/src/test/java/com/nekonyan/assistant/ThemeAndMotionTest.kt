@@ -69,18 +69,23 @@ class ThemeAndMotionTest {
     }
 
     @Test
-    fun `高对比度主题是纯黑白`() {
+    fun `高对比度主题是黑字白底且对比度最大`() {
         val s = colorSchemeFor(NekoThemeId.CONTRAST)
-        // ★ 不要比较 Color.value（ULong）：Color.Black 走 ColorSpace 定义，
-        //   而 Color(0xFF000000) 走 32 位打包构造，两者内部表示不同但视觉等价。
-        //   断言应该针对「视觉上的颜色分量」，并留出浮点容差。
+        // 高对比度 = 纯白底 + 纯黑字（浅色主题）。注意别把 background/onBackground 弄反：
+        // background 是底色，onBackground 是底色之上的文字色。
         val eps = 0.002f
-        assertEquals("背景应接近纯黑(R)", 0f, s.background.red, eps)
-        assertEquals("背景应接近纯黑(G)", 0f, s.background.green, eps)
-        assertEquals("背景应接近纯黑(B)", 0f, s.background.blue, eps)
-        assertEquals("前景应接近纯白(R)", 1f, s.onBackground.red, eps)
-        assertEquals("前景应接近纯白(G)", 1f, s.onBackground.green, eps)
-        assertEquals("前景应接近纯白(B)", 1f, s.onBackground.blue, eps)
+        assertEquals("背景应为纯白(R)", 1f, s.background.red, eps)
+        assertEquals("背景应为纯白(G)", 1f, s.background.green, eps)
+        assertEquals("背景应为纯白(B)", 1f, s.background.blue, eps)
+        assertEquals("文字应为纯黑(R)", 0f, s.onBackground.red, eps)
+        assertEquals("文字应为纯黑(G)", 0f, s.onBackground.green, eps)
+        assertEquals("文字应为纯黑(B)", 0f, s.onBackground.blue, eps)
+        // 前景与背景的亮度差应为最大，这才叫「高对比度」
+        val lum = { c: Float -> c }
+        assertTrue(
+            "前景与背景亮度差应接近 1.0",
+            kotlin.math.abs(lum(s.onBackground.red) - lum(s.background.red)) > 0.98f
+        )
     }
 
     @Test
