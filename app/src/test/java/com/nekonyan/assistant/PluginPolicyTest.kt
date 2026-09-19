@@ -88,5 +88,10 @@ class PluginPolicyTest {
         assertFalse(PluginPolicy.canUpdate("1.10.0", "1.9.0"))
         assertEquals(0, PluginPolicy.versionCompare("v1.2.3", "1.2.3"))
         assertTrue("预发布段视为更旧", PluginPolicy.versionCompare("1.0.0-beta", "1.0.0") < 0)
+        assertTrue("反向：正式版比预发布新", PluginPolicy.versionCompare("1.0.0", "1.0.0-beta") > 0)
+        assertTrue("带数值补丁段仍算更新", PluginPolicy.versionCompare("1.0.1", "1.0") > 0)
+        assertTrue("少一段数值则更旧", PluginPolicy.versionCompare("1.0", "1.0.1") < 0)
+        assertEquals(0, PluginPolicy.versionCompare("1.0.0", "1.0.0"))
+        assertFalse(PluginPolicy.canUpdate("1.0.0", "1.0.0-beta"))
     }
 }

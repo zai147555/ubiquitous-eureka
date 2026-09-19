@@ -112,7 +112,15 @@ object PluginPolicy {
                 x == null && y != null -> return -1   // 本地是预发布/非数值段，视为更旧
                 x != null && y == null -> return 1
                 else -> {
-                    val c = (pa.getOrNull(i) ?: "").compareTo(pb.getOrNull(i) ?: "")
+                    // 走到这里说明两段都**不是数值**（或其中一方已经结束）
+                    val sa = pa.getOrNull(i)
+                    val sb = pb.getOrNull(i)
+                    if (sa == null && sb == null) continue
+                    // b 已结束、a 还多一段非数值：那是预发布标记（1.0.0-beta 的 beta）
+                    // → a 比正式版**旧**；反之 a 是正式版则更新。
+                    if (sa == null) return 1
+                    if (sb == null) return -1
+                    val c = sa.compareTo(sb)
                     if (c != 0) return c
                 }
             }
