@@ -44,7 +44,7 @@ class ThemeAndMotionTest {
             val scheme = colorSchemeFor(id)
             assertNotEquals("$id 的主色不应为默认值", 0uL, scheme.primary.value)
             val extra = extraColorsFor(id)
-            assertTrue("$id 必须有紧急停止色", extra.emergency.value != 0L)
+            assertTrue("$id 必须有紧急停止色", extra.emergency.value.toLong() != 0L)
         }
     }
 
