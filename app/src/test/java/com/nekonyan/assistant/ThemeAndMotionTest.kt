@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.nekonyan.assistant.data.db.NekoDatabase
 import com.nekonyan.assistant.core.util.NekoMode
+import androidx.compose.ui.graphics.Color
 import com.nekonyan.assistant.ui.theme.MotionLevel
 import com.nekonyan.assistant.ui.theme.MotionPolicy
 import com.nekonyan.assistant.ui.theme.NekoMotion
@@ -70,10 +71,12 @@ class ThemeAndMotionTest {
     @Test
     fun `高对比度主题是纯黑白`() {
         val s = colorSchemeFor(NekoThemeId.CONTRAST)
-        assertEquals(0f, s.background.red)
-        assertEquals(0f, s.background.green)
-        assertEquals(0f, s.background.blue)
-        assertEquals(1f, s.onBackground.red)
+        // 用 ULong 位值比较，避免 Float 通道的精确比较（ColorSpace 转换会带来微小误差）
+        assertEquals(Color.Black.value, s.background.value)
+        assertEquals(Color.White.value, s.onBackground.value)
+        // 同时确认视觉上是"黑底白字"（宽容差，防止色空间差异导致误判）
+        assertTrue("背景应接近全黑", s.background.red < 0.02f)
+        assertTrue("前景应接近全白", s.onBackground.red > 0.98f)
     }
 
     @Test
