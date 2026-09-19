@@ -226,7 +226,7 @@ interface PersonaDao {
     suspend fun byId(id: String): AIPersona?
 
     @Query("SELECT * FROM ai_persona WHERE isDefault = 1 LIMIT 1")
-    suspend fun default(): AIPersona?
+    suspend fun defaultPersona(): AIPersona?
 
     @Upsert
     suspend fun upsert(persona: AIPersona)

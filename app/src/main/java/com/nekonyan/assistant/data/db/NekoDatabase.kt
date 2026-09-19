@@ -87,7 +87,7 @@ abstract class NekoDatabase : RoomDatabase() {
             }
 
             // ---- 默认人格（需求：AI 人格仅名称 + 描述） ----
-            if (db.personaDao().default() == null) {
+            if (db.personaDao().defaultPersona() == null) {
                 db.personaDao().upsert(
                     AIPersona(
                         id = DEFAULT_PERSONA_ID,
