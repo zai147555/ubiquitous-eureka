@@ -46,6 +46,8 @@ import com.nekonyan.assistant.core.yolo.SwitchGuard
 import com.nekonyan.assistant.core.yolo.YoloScene
 import com.nekonyan.assistant.data.db.YoloModelEntity
 import com.nekonyan.assistant.data.repo.YoloModelRepository
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 
 /**
  * YOLO 模型管理页（严格按工作区 `yolo.ds` 的页面结构）：
@@ -239,6 +241,54 @@ fun YoloModelScreen(
                     enabled = !state.busy && state.config.allowImport
                 ) { Text("导入模型") }
                 OutlinedButton(onClick = { vm.pruneVersions() }, enabled = !state.busy) { Text("清理旧版本") }
+            }
+
+            HorizontalDivider()
+
+            // ---------------- 识别服务（模型/接入指南.md） ----------------
+            SectionTitle("识别服务（可选 · 局域网）")
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "接自建的 YOLO11n 检测服务：地址形如 http://主机:8000，鉴权头 X-API-Token。" +
+                            "Token 存 Android Keystore，不进日志、不入仓库。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    var base by remember { mutableStateOf(state.serviceBase) }
+                    var token by remember { mutableStateOf(state.serviceToken) }
+                    OutlinedTextField(
+                        value = base,
+                        onValueChange = { base = it },
+                        label = { Text("服务地址") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it },
+                        label = { Text("API Token") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { vm.saveService(base, token) }, enabled = !state.serviceBusy) { Text("保存") }
+                        OutlinedButton(onClick = { vm.probeService() }, enabled = !state.serviceBusy) { Text("探活") }
+                        OutlinedButton(onClick = { vm.healthService() }, enabled = !state.serviceBusy) { Text("健康检查") }
+                    }
+                    Button(
+                        onClick = { vm.detectTestImage() },
+                        enabled = !state.serviceBusy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (state.serviceBusy) "请求中…" else "检测测试图（验证链路）") }
+                    state.serviceMessage?.let { msg ->
+                        Text(
+                            msg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (state.serviceOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
 
             HorizontalDivider()

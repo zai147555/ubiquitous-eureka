@@ -21,7 +21,10 @@ import com.nekonyan.assistant.data.db.YoloModelImportRecordEntity
 import com.nekonyan.assistant.data.db.YoloModelPerformanceEntity
 import com.nekonyan.assistant.data.db.YoloModelSwitchRecordEntity
 import com.nekonyan.assistant.data.db.YoloModelUpdateRecordEntity
+import com.nekonyan.assistant.core.net.YoloServiceClient
+import com.nekonyan.assistant.core.net.ServiceOutcome
 import com.nekonyan.assistant.data.repo.YoloModelRepository
+import com.nekonyan.assistant.data.repo.YoloServiceStore
 import com.nekonyan.assistant.data.repo.YoloOpResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,7 +45,14 @@ data class YoloUiState(
     val scene: YoloScene = YoloScene.Default,
     val busy: Boolean = false,
     val message: String? = null,
-    val messageOk: Boolean = false
+    val messageOk: Boolean = false,
+    // ---- 局域网识别服务（模型/接入指南.md）----
+    val serviceBase: String = "",
+    val serviceToken: String = "",
+    val serviceEnabled: Boolean = false,
+    val serviceBusy: Boolean = false,
+    val serviceMessage: String? = null,
+    val serviceOk: Boolean = false
 ) {
     val current: YoloModelEntity? get() = models.firstOrNull { it.id == config.currentModelId }
 
@@ -97,10 +107,20 @@ class YoloModelViewModel(
     private val appContext: android.content.Context
 ) : ViewModel() {
 
+    private val serviceStore = YoloServiceStore(appContext)
+    private val service = YoloServiceClient()
+
     private val _state = MutableStateFlow(YoloUiState())
     val state: StateFlow<YoloUiState> = _state.asStateFlow()
 
     init {
+        _state.update {
+            it.copy(
+                serviceBase = serviceStore.baseUrl(),
+                serviceToken = serviceStore.token(),
+                serviceEnabled = serviceStore.enabled()
+            )
+        }
         viewModelScope.launch {
             // 首启把 assets 里的内置模型释放成真实文件并登记
             runCatching { repo.ensureBuiltinInstalled() }
@@ -197,6 +217,87 @@ class YoloModelViewModel(
 
     fun exportModel(model: YoloModelEntity, target: Uri) = act("导出模型") {
         repo.exportModel(model.id, target)
+    }
+
+    // ---------------- 局域网识别服务（接入指南第 365~384 行的接入清单） ----------------
+
+    fun saveService(baseUrl: String, token: String) {
+        serviceStore.save(baseUrl, token)
+        _state.update {
+            it.copy(
+                serviceBase = serviceStore.baseUrl(),
+                serviceToken = serviceStore.token(),
+                serviceMessage = "已保存服务地址与 Token（Token 存于 Keystore，不进日志）",
+                serviceOk = true
+            )
+        }
+    }
+
+    fun setServiceEnabled(enabled: Boolean) {
+        serviceStore.setEnabled(enabled)
+        _state.update { it.copy(serviceEnabled = enabled) }
+    }
+
+    /** 第 1 步：GET / （免认证）——判断"服务活着吗"，并确认模型名与阈值 */
+    fun probeService() = serviceAct("探活") {
+        when (val r = service.info(_state.value.serviceBase)) {
+            is ServiceOutcome.Ok -> "✅ 服务在跑：${r.value.service} · 模型 ${r.value.model} · 输入 ${r.value.imgsz} · 阈值 ${r.value.confThreshold}" to true
+            is ServiceOutcome.Err -> "❌ ${r.message}" to false
+        }
+    }
+
+    /** 第 3 步：GET /health（需认证）——确认鉴权与并发状态 */
+    fun healthService() = serviceAct("健康检查") {
+        when (val r = service.health(_state.value.serviceBase, _state.value.serviceToken)) {
+            is ServiceOutcome.Ok -> "✅ ${r.value}" to true
+            is ServiceOutcome.Err -> "❌ ${r.message}" to false
+        }
+    }
+
+    /**
+     * 第 4 步：POST /detect —— 用一张**合成测试图**验证链路（不需要相册权限）。
+     * 实测到的 total_ms 同时写进性能表，这样"服务端推理"的延迟也是真实数据。
+     */
+    fun detectTestImage() = serviceAct("检测测试图") {
+        val jpeg = syntheticTestJpeg()
+            ?: return@serviceAct "❌ 生成测试图失败" to false
+        when (val r = service.detect(_state.value.serviceBase, _state.value.serviceToken, jpeg)) {
+            is ServiceOutcome.Ok -> {
+                val d = r.value
+                val names = NcnnDetector.labels
+                val top = d.detections.maxByOrNull { it.conf }
+                val topText = top?.let {
+                    val name = names.getOrNull(it.cls) ?: "cls=${it.cls}"
+                    "最高置信：$name ${"%.0f".format(it.conf * 100)}%"
+                } ?: "无检出（阈值 0.3 下正常）"
+                _state.value.current?.let { m ->
+                    repo.recordPerformance(m.id, _state.value.scene, fps = if (d.totalMs > 0) (1000.0 / d.totalMs).toFloat() else 0f, latencyMs = d.totalMs.toInt())
+                }
+                "✅ 链路通：检出 ${d.count} 个目标 · 服务端耗时 ${"%.0f".format(d.totalMs)}ms（推理 ${"%.0f".format(d.costMs)}ms）· $topText" to true
+            }
+            is ServiceOutcome.Err -> "❌ ${r.message}" to false
+        }
+    }
+
+    /** 合成一张 640×640 的测试图（白底 + 深色矩形），只为验证链路，不涉隐私 */
+    private fun syntheticTestJpeg(): ByteArray? = runCatching {
+        val bmp = android.graphics.Bitmap.createBitmap(640, 640, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        val paint = android.graphics.Paint().apply { color = android.graphics.Color.rgb(40, 40, 60) }
+        canvas.drawRect(180f, 120f, 460f, 560f, paint)
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+        bmp.recycle()
+        out.toByteArray()
+    }.getOrNull()
+
+    private fun serviceAct(label: String, block: suspend () -> Pair<String, Boolean>) = viewModelScope.launch {
+        _state.update { it.copy(serviceBusy = true, serviceMessage = "$label 中…", serviceOk = false) }
+        val (msg, ok) = runCatching { block() }.getOrElse {
+            "❌ $label 失败：${it.message ?: it.javaClass.simpleName}" to false
+        }
+        _state.update { it.copy(serviceBusy = false, serviceMessage = msg, serviceOk = ok) }
     }
 
     fun updateConfig(transform: (YoloModelConfigEntity) -> YoloModelConfigEntity) = viewModelScope.launch {
