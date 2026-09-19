@@ -86,6 +86,18 @@ class HttpUpdateApi(
             }
         }
         if (files.isEmpty()) return@runCatching null
+        // ★ 硬约束：清单里的 url **不在签名范围内**（实测：改 url 验签仍通过），
+        //   所以这里必须自己把关 —— 只接受与更新源同域(host)的地址，否则拒绝整份清单。
+        val host = runCatching { java.net.URI(baseUrl.trimEnd('/')).host }.getOrNull()
+        val foreign = files.filter { f ->
+            val h = runCatching { java.net.URI(f.url).host }.getOrNull()
+            h == null || (host != null && !h.equals(host, ignoreCase = true))
+        }
+        if (foreign.isNotEmpty()) {
+            NekoLog.warn(NekoLog.MODULE_UPDATE, "update_foreign_url",
+                "清单里的下载地址与更新源不同域：${foreign.joinToString { it.name }}")
+            return@runCatching null
+        }
         val labels = buildList {
             val la = o.optJSONArray("labels")
             for (i in 0 until (la?.length() ?: 0)) la?.optString(i)?.takeIf { it.isNotBlank() }?.let { add(it) }

@@ -471,8 +471,18 @@ class YoloModelRepository(
             deviceIdHash = deviceIdHash
         )
         val updated = runCatching {
-            updater.checkAndUpdate { dir, _ ->
-                NcnnDetector.init(context = context, modelDir = dir, useGpu = false, inputSize = 640)
+            updater.checkAndUpdate { dir, labels ->
+                val loaded = NcnnDetector.init(context = context, modelDir = dir, useGpu = false, inputSize = 640)
+                // ★ 硬约束：清单里的 labels 不在签名范围内（实测：改 labels 验签仍通过）。
+                //   加载成功后比对类别数，不一致就当作失败 → 触发 ModelUpdater 回滚，
+                //   避免"框位置对、类别名整体错位"这种最难发现的故障（docs/02 专门警告过）。
+                if (loaded && labels.isNotEmpty() && NcnnDetector.labels.size != labels.size) {
+                    NekoLog.error(NekoLog.MODULE_UPDATE, "update_labels_mismatch",
+                        "清单 ${labels.size} 类，实际加载 ${NcnnDetector.labels.size} 类 → 回滚")
+                    false
+                } else {
+                    loaded
+                }
             }
         }.getOrElse { e ->
             NekoLog.error(NekoLog.MODULE_UPDATE, "update_failed", e.javaClass.simpleName + ": " + e.message)
