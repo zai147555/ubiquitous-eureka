@@ -68,7 +68,11 @@ android {
     // externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
 }
 
-ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+ksp {
+    // 用 Kotlin 生成（避免生成 Java 实现类时踩 Java 关键字/默认方法这类坑）
+    arg("room.generateKotlin", "true")
+    // 未开启 exportSchema，因此不设 room.schemaLocation
+}
 
 dependencies {
     implementation(libs.androidx.core.ktx)

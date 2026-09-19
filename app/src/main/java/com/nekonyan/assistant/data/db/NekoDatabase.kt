@@ -30,7 +30,10 @@ import com.nekonyan.assistant.core.util.NekoMode
         LogEntry::class, PluginEntity::class, EnvironmentCheckRecord::class, RunModeConfig::class
     ],
     version = 1,
-    exportSchema = true
+    // 关闭 schema 导出：本工程尚无迁移需求。开启时需要确保 schemas/ 目录
+    // 已存在且随仓库提交，否则 Room 会报 "Empty schema file"（CI 上踩过这个坑）。
+    // 将来做数据库迁移时：改成 true + ksp arg room.schemaLocation + 提交 app/schemas/。
+    exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class NekoDatabase : RoomDatabase() {
