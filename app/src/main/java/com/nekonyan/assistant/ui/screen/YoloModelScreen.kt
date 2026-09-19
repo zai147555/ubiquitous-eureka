@@ -312,8 +312,6 @@ fun YoloModelScreen(
             ConfigSwitch("自动切换（按场景）", state.config.autoSwitch) { v -> vm.updateConfig { it.copy(autoSwitch = v) } }
             ConfigSwitch("仅 WiFi 下载", state.config.wifiOnly) { v -> vm.updateConfig { it.copy(wifiOnly = v) } }
             ConfigSwitch("自动更新", state.config.autoUpdate) { v -> vm.updateConfig { it.copy(autoUpdate = v) } }
-            ConfigSwitch("灰度发布", state.config.grayRelease) { v -> vm.updateConfig { it.copy(grayRelease = v) } }
-            ConfigSwitch("A/B 测试", state.config.abTest) { v -> vm.updateConfig { it.copy(abTest = v) } }
             ConfigSwitch("模型签名校验", state.config.signatureCheck) { v -> vm.updateConfig { it.copy(signatureCheck = v) } }
             ConfigSwitch("允许导入", state.config.allowImport) { v -> vm.updateConfig { it.copy(allowImport = v) } }
             ConfigSwitch("允许导出", state.config.allowExport) { v -> vm.updateConfig { it.copy(allowExport = v) } }

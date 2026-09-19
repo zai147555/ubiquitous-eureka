@@ -171,7 +171,22 @@ class YoloModelViewModel(
 
     fun pruneVersions() = act("清理旧版本") { repo.pruneVersions() }
 
-    fun checkUpdate() = act("检查更新") { repo.checkUpdate() }
+    fun checkUpdate() = act("检查更新") {
+        repo.checkUpdate(
+            appVersion = com.nekonyan.assistant.BuildConfig.VERSION_NAME,
+            deviceIdHash = deviceIdHash()
+        )
+    }
+
+    /** 灰度已按用户要求删除：device_id 仅作调用合法性占位，用**每台设备随机生成**的 id 哈希，不含任何个人信息 */
+    private fun deviceIdHash(): String {
+        val prefs = appContext.getSharedPreferences("nekonyan_update", android.content.Context.MODE_PRIVATE)
+        val id = prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString().also {
+            prefs.edit().putString("device_id", it).apply()
+        }
+        return java.security.MessageDigest.getInstance("SHA-256")
+            .digest(id.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
 
     /**
      * 推理自检（yolo.ds 第 78~86 行：实时 FPS / 推理延迟）。

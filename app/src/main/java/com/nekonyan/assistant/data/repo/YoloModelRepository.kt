@@ -8,6 +8,7 @@ import android.os.BatteryManager
 import android.os.StatFs
 import com.nekonyan.assistant.core.log.NekoLog
 import com.nekonyan.assistant.core.yolo.ModelFiles
+import com.nekonyan.assistant.core.yolo.NcnnDetector
 import com.nekonyan.assistant.core.yolo.ModelPolicy
 import com.nekonyan.assistant.core.yolo.SignatureCheck
 import com.nekonyan.assistant.core.yolo.SwitchCheck
@@ -438,16 +439,69 @@ class YoloModelRepository(
             )
         }
 
-    /** 检查更新：本轮没有配置更新源，如实返回而不是假装"已是最新" */
-    suspend fun checkUpdate(): YoloOpResult = withContext(Dispatchers.IO) {
+    /**
+     * 检查更新（M18）：真调用热更新服务 —— 取签名清单 → 逐文件 SHA-256 + Ed25519 验签 →
+     * 原子切换 → 回调里加载模型；任一步失败都会保留旧模型（逻辑在 [ModelUpdater] 内，fail-closed）。
+     *
+     * 更新源与凭据来自随包内置的密文（[BuiltinSecretStore]），没有配置时如实报错而不是假装"已是最新"。
+     */
+    suspend fun checkUpdate(appVersion: String, deviceIdHash: String): YoloOpResult = withContext(Dispatchers.IO) {
+        val currentVersion = dao.byId(ensureConfig().currentModelId)?.version.orEmpty()
+        val creds = com.nekonyan.assistant.core.security.BuiltinSecretStore.loadModelService(context)
+        if (creds == null) {
+            dao.insertUpdate(
+                YoloModelUpdateRecordEntity(
+                    fromVersion = currentVersion, toVersion = "", status = "failed",
+                    message = "内置凭据里没有热更新地址/密钥"
+                )
+            )
+            return@withContext YoloOpResult(false, "未配置更新源：内置凭据缺少 model_base_url / sign_secret")
+        }
+        val (modelBase, token, secret) = creds
         dao.insertUpdate(
             YoloModelUpdateRecordEntity(
-                fromVersion = dao.byId(ensureConfig().currentModelId)?.version.orEmpty(),
-                toVersion = "", status = "checking",
-                message = "未配置更新源（docs/04_模型热更新.md 的服务端尚未部署）"
+                fromVersion = currentVersion, toVersion = "", status = "checking",
+                message = "正在检查 $modelBase"
             )
         )
-        YoloOpResult(false, "未配置更新源：模型热更新需要服务端清单，当前只能本地导入")
+        val updater = com.nekonyan.assistant.update.ModelUpdater(
+            context = context,
+            api = com.nekonyan.assistant.update.HttpUpdateApi(modelBase, token, secret),
+            appVersion = appVersion,
+            deviceIdHash = deviceIdHash
+        )
+        val updated = runCatching {
+            updater.checkAndUpdate { dir, _ ->
+                NcnnDetector.init(context = context, modelDir = dir, useGpu = false, inputSize = 640)
+            }
+        }.getOrElse { e ->
+            NekoLog.error(NekoLog.MODULE_UPDATE, "update_failed", e.javaClass.simpleName + ": " + e.message)
+            dao.insertUpdate(
+                YoloModelUpdateRecordEntity(
+                    fromVersion = currentVersion, toVersion = "", status = "failed",
+                    message = e.message ?: e.javaClass.simpleName
+                )
+            )
+            return@withContext YoloOpResult(false, "检查更新失败：${e.message ?: e.javaClass.simpleName}")
+        }
+        if (!updated) {
+            dao.insertUpdate(
+                YoloModelUpdateRecordEntity(
+                    fromVersion = currentVersion, toVersion = currentVersion, status = "done",
+                    message = "无可用更新（或校验未通过，已保留旧模型）"
+                )
+            )
+            return@withContext YoloOpResult(true, "已是最新（$currentVersion）；若刚发布过，请确认契约与负向用例")
+        }
+        val newVersion = dao.byId(ensureConfig().currentModelId)?.version ?: currentVersion
+        dao.insertUpdate(
+            YoloModelUpdateRecordEntity(
+                fromVersion = currentVersion, toVersion = newVersion, status = "done",
+                downloadedAt = System.currentTimeMillis(), switchedAt = System.currentTimeMillis()
+            )
+        )
+        NekoLog.info(NekoLog.MODULE_UPDATE, "update_ok", "$currentVersion → $newVersion")
+        YoloOpResult(true, "已更新并加载：$currentVersion → $newVersion")
     }
 
     // ---------------- 内部工具 ----------------
