@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NekoNyan.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/neko_splash_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimationDuration">300</item>
+        <item name="postSplashScreenTheme">@style/Theme.NekoNyan</item>
+    </style>
+
+    <!-- 黑猫色：深底浅字 -->
+    <style name="Theme.NekoNyan" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/neko_splash_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+</resources>

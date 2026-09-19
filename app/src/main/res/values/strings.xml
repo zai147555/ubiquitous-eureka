@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">猫娘助手</string>
+
+    <!-- 侧边菜单（需求：知识库、任务、音乐、插件、配置、设置、日志） -->
+    <string name="menu_knowledge">知识库</string>
+    <string name="menu_tasks">任务</string>
+    <string name="menu_music">音乐</string>
+    <string name="menu_plugin">插件</string>
+    <string name="menu_config">配置</string>
+    <string name="menu_settings">设置</string>
+    <string name="menu_logs">全部日志</string>
+
+    <!-- 主界面 -->
+    <string name="chat_hint">说点什么…</string>
+    <string name="action_send">发送</string>
+    <string name="action_import">导入文件</string>
+    <string name="action_photo">照片</string>
+    <string name="action_more">更多</string>
+    <string name="emergency_stop">紧急停止</string>
+    <string name="emergency_stop_hint">停止一切自动操作（音量键 / 通知栏也可停止）</string>
+    <string name="log_readonly_notice">日志为只读，不可删除</string>
+
+    <!-- 主题（需求：橘猫/白猫/黑猫/高对比度） -->
+    <string name="theme_orange">橘猫</string>
+    <string name="theme_white">白猫</string>
+    <string name="theme_black">黑猫</string>
+    <string name="theme_contrast">高对比度</string>
+    <string name="theme_font_scale">字体大小</string>
+    <string name="theme_animations">高级动态效果</string>
+
+    <!-- 运行模式（需求：视觉辅助 / 辅助输入 / 切换提示） -->
+    <string name="mode_visual_assist">视觉辅助</string>
+    <string name="mode_input_assist">辅助输入</string>
+    <string name="mode_switch_hint">切换提示</string>
+
+    <string name="empty_placeholder">本页将在后续里程碑实现</string>
+</resources>

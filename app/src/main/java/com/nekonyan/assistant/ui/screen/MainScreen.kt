@@ -1,0 +1,274 @@
+package com.nekonyan.assistant.ui.screen
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.nekonyan.assistant.ui.component.EmergencyStopButton
+import com.nekonyan.assistant.ui.component.NekoDrawerContent
+import com.nekonyan.assistant.ui.theme.NekoTheme
+import kotlinx.coroutines.launch
+
+/**
+ * 主界面（需求原文）：
+ *   · **QQ 风格，顶部无返回键和聊天名**；
+ *   · 底部：输入框、发送、导入文件、照片；
+ *   · **右上三条杠**展开侧边菜单（知识库、任务、音乐、插件、配置、设置、全部日志）；
+ *   · **始终有紧急停止按钮**（音量键、通知栏也可停止）。
+ *
+ * 说明：主界面刻意不放返回键与标题 —— 侧边菜单是唯一导航入口，
+ * 这与需求一致，也避免了「标题挤占聊天区」的 QQ 布局问题。
+ */
+@Composable
+fun MainScreen(
+    onOpenRoute: (NekoRoute) -> Unit,
+    onSend: (String) -> Unit = {},
+    onEmergencyStop: () -> Unit = {},
+    runningTaskLabel: String? = null,
+    messages: List<ChatMessage> = emptyList()
+) {
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    var input by remember { mutableStateOf("") }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                NekoDrawerContent(
+                    onSelect = { route ->
+                        scope.launch { drawerState.close() }
+                        onOpenRoute(route)
+                    }
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { },   // 需求：顶部无聊天名
+                    navigationIcon = { },  // 需求：顶部无返回键
+                    actions = {
+                        // 需求：右上三条杠展开侧边菜单
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "侧边菜单")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            },
+            bottomBar = {
+                ChatInputBar(
+                    value = input,
+                    onValueChange = { input = it },
+                    onSend = {
+                        if (input.isNotBlank()) {
+                            onSend(input.trim())
+                            input = ""
+                        }
+                    }
+                )
+            }
+        ) { padding ->
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                // 需求：长任务状态常驻可见
+                if (runningTaskLabel != null) {
+                    RunningTaskBanner(runningTaskLabel)
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(messages, key = { it.id }) { msg -> ChatBubble(msg) }
+                }
+
+                // 需求：始终有紧急停止按钮
+                EmergencyStopButton(
+                    onStop = onEmergencyStop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+/** 需求：底部为「输入框、发送、导入文件、照片」四件套 */
+@Composable
+private fun ChatInputBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onImportFile: () -> Unit = {},
+    onPhoto: () -> Unit = {}
+) {
+    Surface(tonalElevation = 3.dp) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onImportFile) {
+                Icon(Icons.Filled.AttachFile, contentDescription = "导入文件")
+            }
+            IconButton(onClick = onPhoto) {
+                Icon(Icons.Filled.Image, contentDescription = "照片")
+            }
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("说点什么…") },
+                maxLines = 4,
+                shape = MaterialTheme.shapes.large
+            )
+            Spacer(Modifier.width(8.dp))
+            ExtendedFloatingActionButton(
+                onClick = onSend,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                icon = { Icon(Icons.Filled.Send, contentDescription = null) },
+                text = { Text("发送") }
+            )
+        }
+    }
+}
+
+@Composable
+private fun RunningTaskBanner(label: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.Chat,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "正在执行：$label",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/** 聊天消息（QQ 风格气泡：自己靠右，对方靠左） */
+data class ChatMessage(
+    val id: String,
+    val text: String,
+    val fromUser: Boolean,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Composable
+private fun ChatBubble(msg: ChatMessage) {
+    val alignment = if (msg.fromUser) Alignment.CenterEnd else Alignment.CenterStart
+    val bg = if (msg.fromUser) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val fg = if (msg.fromUser) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Box(Modifier.fillMaxWidth(), contentAlignment = alignment) {
+        Surface(
+            color = bg,
+            shape = RoundedCornerShape(
+                topStart = 18.dp,
+                topEnd = 18.dp,
+                bottomStart = if (msg.fromUser) 18.dp else 4.dp,
+                bottomEnd = if (msg.fromUser) 4.dp else 18.dp
+            ),
+            modifier = Modifier.fillMaxWidth(0.82f)
+        ) {
+            Text(
+                text = msg.text,
+                color = fg,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
+    }
+}
+
+/** 侧边菜单选中项 */
+enum class NekoRoute(val label: String) {
+    CHAT("聊天"),
+    KNOWLEDGE("知识库"),
+    TASKS("任务"),
+    MUSIC("音乐"),
+    PLUGIN("插件"),
+    CONFIG("配置"),
+    SETTINGS("设置"),
+    LOGS("全部日志")
+}

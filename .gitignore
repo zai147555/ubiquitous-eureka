@@ -1,0 +1,27 @@
+# ---- 构建产物 ----
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/app/release
+
+# ---- 生成的 schema（保留以便迁移审查，如需忽略请取消注释）----
+# app/schemas/
+
+# ---- 密钥与本地配置：绝不入库 ----
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+.env
+
+# ---- 本机验证产生的临时文件 ----
+/verify/
+*.jar.tmp

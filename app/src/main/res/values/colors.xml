@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 仅用于开屏与系统栏；应用内配色见 ui/theme/NekoColors.kt -->
+    <color name="neko_splash_bg">#FFF6EC</color>
+</resources>

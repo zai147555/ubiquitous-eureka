@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动主题：Android 12+ 系统开屏（大圆角 + 猫图标），随后切入 Compose 主题 -->
+    <style name="Theme.NekoNyan.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/neko_splash_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimationDuration">300</item>
+        <item name="postSplashScreenTheme">@style/Theme.NekoNyan</item>
+    </style>
+
+    <!-- 应用主题：真正的配色由 Compose 的 NekoTheme 提供（橘猫/白猫/黑猫/高对比度） -->
+    <style name="Theme.NekoNyan" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/neko_splash_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+</resources>
