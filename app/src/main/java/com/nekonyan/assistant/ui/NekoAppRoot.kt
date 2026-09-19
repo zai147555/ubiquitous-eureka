@@ -1,5 +1,6 @@
 package com.nekonyan.assistant.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -52,6 +53,17 @@ fun NekoAppRoot() {
             color = MaterialTheme.colorScheme.background
         ) {
             var route by remember { mutableStateOf(NekoRoute.CHAT) }
+            var backToDrawer by remember { mutableStateOf(false) }
+
+            // 需求：从设置等页面退出 → 回聊天页并展开侧边栏（侧边栏是唯一导航入口，
+            // 回到一个"什么都没有"的聊天页会逼用户再点一次三条杠）
+            val backToChat: () -> Unit = {
+                backToDrawer = true
+                route = NekoRoute.CHAT
+            }
+
+            // 系统返回键在所有功能页都走同一条"回侧边栏"路径
+            BackHandler(enabled = route != NekoRoute.CHAT) { backToChat() }
 
             when (route) {
                 NekoRoute.CHAT -> {
@@ -67,26 +79,28 @@ fun NekoAppRoot() {
                         messages = chatState.messages,
                         streamingText = chatState.streamingText,
                         errorText = chatState.error,
-                        onDismissError = { chatVm.clearError() }
+                        onDismissError = { chatVm.clearError() },
+                        startWithDrawerOpen = backToDrawer,
+                        onDrawerOpened = { backToDrawer = false }
                     )
                 }
 
-                NekoRoute.KNOWLEDGE -> KnowledgeScreen(onBack = { route = NekoRoute.CHAT })
+                NekoRoute.KNOWLEDGE -> KnowledgeScreen(onBack = backToChat)
 
                 // 需求：点击任务自动把任务消息发给 AI —— 与手动输入走同一条发送路径
                 NekoRoute.TASKS -> TasksScreen(
-                    onBack = { route = NekoRoute.CHAT },
+                    onBack = backToChat,
                     onAutoSend = chatVm::send
                 )
 
-                NekoRoute.MUSIC -> MusicScreen(onBack = { route = NekoRoute.CHAT })
-                NekoRoute.PLUGIN -> PluginScreen(onBack = { route = NekoRoute.CHAT })
-                NekoRoute.CONFIG -> ConfigScreen(onBack = { route = NekoRoute.CHAT })
+                NekoRoute.MUSIC -> MusicScreen(onBack = backToChat)
+                NekoRoute.PLUGIN -> PluginScreen(onBack = backToChat)
+                NekoRoute.CONFIG -> ConfigScreen(onBack = backToChat)
                 NekoRoute.SETTINGS -> SettingsScreen(
-                    onBack = { route = NekoRoute.CHAT },
+                    onBack = backToChat,
                     themeVm = themeVm
                 )
-                NekoRoute.LOGS -> LogScreen(onBack = { route = NekoRoute.CHAT })
+                NekoRoute.LOGS -> LogScreen(onBack = backToChat)
             }
         }
     }

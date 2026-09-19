@@ -1,16 +1,21 @@
 package com.nekonyan.assistant.ui.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -78,12 +83,28 @@ fun MainScreen(
     /** 正在流式接收的回复（还没落库，边收边显示） */
     streamingText: String = "",
     errorText: String? = null,
-    onDismissError: () -> Unit = {}
+    onDismissError: () -> Unit = {},
+    /** 从设置等功能页退出时置 true：回到聊天页的同时展开侧边栏 */
+    startWithDrawerOpen: Boolean = false,
+    onDrawerOpened: () -> Unit = {}
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
+
+    // 侧边栏展开时，系统返回键先关侧边栏（否则会直接把 App 退到桌面）
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+
+    // 需求：从设置等页面退出应回到侧边栏（而不是回到一个"空白聊天页"让人再点一次三条杠）
+    LaunchedEffect(startWithDrawerOpen) {
+        if (startWithDrawerOpen) {
+            drawerState.open()
+            onDrawerOpened()
+        }
+    }
 
     // 新消息 / 新字进来都要能看到：自动滚到底部
     LaunchedEffect(messages.size, streamingText) {
@@ -121,16 +142,33 @@ fun MainScreen(
                 )
             },
             bottomBar = {
-                ChatInputBar(
-                    value = input,
-                    onValueChange = { input = it },
-                    onSend = {
-                        if (input.isNotBlank()) {
-                            onSend(input.trim())
-                            input = ""
+                // 需求：系统按键不许压在输入栏上。
+                // 按 safeDrawing 的**底边**留白：导航键隐藏时为 0，键盘弹出时等于键盘高度，
+                // 于是手势导航、三键导航、键盘弹起三种情况下输入栏都不会被盖住。
+                Column(
+                    Modifier.windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
+                    )
+                ) {
+                    // 需求：始终有紧急停止按钮 —— 挪到键盘上方，任何时候都点得到
+                    EmergencyStopButton(
+                        onStop = onEmergencyStop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+
+                    ChatInputBar(
+                        value = input,
+                        onValueChange = { input = it },
+                        onSend = {
+                            if (input.isNotBlank()) {
+                                onSend(input.trim())
+                                input = ""
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
         ) { padding ->
             Column(
@@ -175,13 +213,6 @@ fun MainScreen(
                     }
                 }
 
-                // 需求：始终有紧急停止按钮
-                EmergencyStopButton(
-                    onStop = onEmergencyStop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                )
             }
         }
     }
