@@ -20,7 +20,7 @@ import com.nekonyan.assistant.data.db.YoloModelPerformanceEntity
 import com.nekonyan.assistant.data.db.YoloModelSwitchRecordEntity
 import com.nekonyan.assistant.data.db.YoloModelUpdateRecordEntity
 import com.nekonyan.assistant.data.repo.YoloModelRepository
-import YoloOpResult
+import com.nekonyan.assistant.data.repo.YoloOpResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
