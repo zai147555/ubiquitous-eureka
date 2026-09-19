@@ -331,13 +331,13 @@ object DataCollector {
         }
 
         fun removeAll(ctx: Context, ids: Collection<String>) = synchronized(lock) {
-            if (ids.isEmpty()) return@Synchronized
+            if (ids.isEmpty()) return@synchronized
             val set = ids.toHashSet()
             saveLocked(ctx, allLocked(ctx).filterNot { it.id in set })
         }
 
         fun markUploaded(ctx: Context, ids: Collection<String>) = synchronized(lock) {
-            if (ids.isEmpty()) return@Synchronized
+            if (ids.isEmpty()) return@synchronized
             val set = ids.toHashSet()
             val list = allLocked(ctx).map {
                 if (it.id in set) it.copy(uploaded = true) else it
@@ -346,7 +346,7 @@ object DataCollector {
         }
 
         fun incTry(ctx: Context, ids: Collection<String>) = synchronized(lock) {
-            if (ids.isEmpty()) return@Synchronized
+            if (ids.isEmpty()) return@synchronized
             val set = ids.toHashSet()
             val list = allLocked(ctx).map {
                 if (it.id in set) it.copy(tryCount = it.tryCount + 1) else it

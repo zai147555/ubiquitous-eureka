@@ -48,7 +48,7 @@ val NekoDrawerEntries: List<DrawerEntry> = listOf(
     DrawerEntry(NekoRoute.PLUGIN, Icons.Filled.Extension),
     DrawerEntry(NekoRoute.CONFIG, Icons.Filled.Tune),
     DrawerEntry(NekoRoute.SETTINGS, Icons.Filled.Settings),
-    DrawerEntry(NekoRoute.LOGS, Icons.Filled.Article)
+    DrawerEntry(NekoRoute.LOGS, Icons.Outlined.Article)
 )
 
 @Composable
