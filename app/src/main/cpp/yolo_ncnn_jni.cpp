@@ -217,7 +217,9 @@ Java_com_nekonyan_assistant_core_yolo_NcnnDetector_nativeDetect(
 
     // ---- 推理 ----
     ncnn::Extractor ex = d->net.create_extractor();
-    ex.set_num_threads(d->net.opt.num_threads);
+    // 说明：不要把线程数设在 Extractor 上 —— ncnn 已移除 Extractor::set_num_threads，
+    // 线程数统一由 Net::opt.num_threads 决定（init 里已设，见 d->net.opt.num_threads）。
+    // 之前这里留了一行旧 API 调用，CI 上直接编译失败：no member named 'set_num_threads' in 'ncnn::Extractor'。
     if (ex.input(d->input_name.c_str(), padded) != 0) {
         LOGE("input blob '%s' 不存在（模型与代码不匹配）", d->input_name.c_str());
         return nullptr;
