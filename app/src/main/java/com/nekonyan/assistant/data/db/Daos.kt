@@ -250,7 +250,7 @@ interface PersonaDao {
     /** 需求：使用时把「名称 + 描述」拼进系统提示词 */
     @Transaction
     suspend fun systemPromptFragment(personaId: String?): String {
-        val p = personaId?.let { byId(it) } ?: default() ?: return ""
+        val p = personaId?.let { byId(it) } ?: defaultPersona() ?: return ""
         return buildString {
             append("人格名称：").append(p.name)
             if (p.description.isNotBlank()) {
