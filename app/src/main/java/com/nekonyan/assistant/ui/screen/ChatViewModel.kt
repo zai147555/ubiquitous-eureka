@@ -179,6 +179,39 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * 导入附件（底部「导入文件」「照片」）：复制到应用私有目录（长期可读，不受 URI 授权回收影响），
+     * 并在会话里留一条可见记录。图片的视觉理解（deepseek-vl）属 M6 后续。
+     */
+    fun importAttachment(uri: android.net.Uri, isImage: Boolean) {
+        viewModelScope.launch {
+            val ctx = NekoApp.context()
+            val name = runCatching {
+                ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (i >= 0 && c.moveToFirst()) c.getString(i) else null
+                }
+            }.getOrNull() ?: uri.lastPathSegment ?: "未命名"
+            val dir = java.io.File(ctx.filesDir, "imports").apply { mkdirs() }
+            val target = java.io.File(dir, "${System.currentTimeMillis()}_$name")
+            val ok = runCatching {
+                ctx.contentResolver.openInputStream(uri)?.use { ins ->
+                    target.outputStream().use { outs -> ins.copyTo(outs) }
+                } ?: error("打开输入流失败")
+            }.isSuccess
+            val text = if (ok) {
+                NekoLog.info(NekoLog.MODULE_STORE, if (isImage) "chat_photo_import" else "chat_file_import",
+                    "$name ${target.length() / 1024}KB")
+                "${if (isImage) "🖼 已导入图片" else "📎 已导入文件"}：$name（已存入应用私有目录）"
+            } else {
+                NekoLog.warn(NekoLog.MODULE_STORE, "chat_import_failed", name)
+                "❌ 导入失败：$name"
+            }
+            val sid = sessionId ?: repo.ensureSession(mode.key).also { sessionId = it }
+            repo.appendMessage(sid, Message.ROLE_USER, text)
+        }
+    }
+
     fun clearError() = _state.update { it.copy(error = null) }
 
     override fun onCleared() {

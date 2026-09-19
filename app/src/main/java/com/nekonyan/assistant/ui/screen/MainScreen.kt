@@ -62,6 +62,8 @@ import com.nekonyan.assistant.ui.component.EmergencyStopButton
 import com.nekonyan.assistant.ui.component.NekoDrawerContent
 import com.nekonyan.assistant.ui.theme.NekoTheme
 import kotlinx.coroutines.launch
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 
 /**
  * 主界面（需求原文）：
@@ -85,6 +87,8 @@ fun MainScreen(
     streamingText: String = "",
     errorText: String? = null,
     onDismissError: () -> Unit = {},
+    /** 导入文件/照片：参数为 (uri, 是否图片) */
+    onAttachment: (android.net.Uri, Boolean) -> Unit = { _, _ -> },
     /** 从设置等功能页退出时置 true：回到聊天页的同时展开侧边栏 */
     startWithDrawerOpen: Boolean = false,
     onDrawerOpened: () -> Unit = {}
@@ -93,6 +97,14 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
+
+    // 需求：底部「导入文件」「照片」必须真的能导入（此前是空回调，点了没反应）
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> uri?.let { onAttachment(it, true) } }
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { onAttachment(it, false) } }
 
     // 侧边栏展开时，系统返回键先关侧边栏（否则会直接把 App 退到桌面）
     BackHandler(enabled = drawerState.isOpen) {
@@ -162,6 +174,14 @@ fun MainScreen(
                     ChatInputBar(
                         value = input,
                         onValueChange = { input = it },
+                        onImportFile = { filePicker.launch(arrayOf("*/*")) },
+                        onPhoto = {
+                            photoPicker.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        },
                         onSend = {
                             if (input.isNotBlank()) {
                                 onSend(input.trim())

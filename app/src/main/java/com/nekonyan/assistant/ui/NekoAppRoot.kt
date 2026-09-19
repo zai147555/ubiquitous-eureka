@@ -89,6 +89,7 @@ fun NekoAppRoot() {
                         streamingText = chatState.streamingText,
                         errorText = chatState.error,
                         onDismissError = { chatVm.clearError() },
+                        onAttachment = { uri, isImage -> chatVm.importAttachment(uri, isImage) },
                         startWithDrawerOpen = backToDrawer,
                         onDrawerOpened = { backToDrawer = false }
                     )
