@@ -268,6 +268,9 @@ interface ConversationDao {
     @Query("SELECT * FROM conversation_session ORDER BY updatedAt DESC")
     fun observeSessions(): Flow<List<ConversationSession>>
 
+    @Query("SELECT * FROM conversation_session ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun latestSession(): ConversationSession?
+
     @Query("SELECT * FROM conversation_session WHERE id = :id")
     suspend fun sessionById(id: String): ConversationSession?
 

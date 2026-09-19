@@ -81,13 +81,3 @@ fun PluginScreen(onBack: () -> Unit) = PlaceholderScreen(
             "权限需单独授权（plugin 表与权限字段已就绪）。",
     onBack = onBack
 )
-
-@Composable
-fun ConfigScreen(onBack: () -> Unit) = PlaceholderScreen(
-    title = "配置",
-    milestone = "计划里程碑 M6 / M18",
-    description = "API Base URL、Key、文本/视觉模型、超时、执行速度；\n" +
-            "识别频率、本地 YOLO、Shizuku、运行模式、AI 知识库、游戏配置。\n" +
-            "API Key 已支持 Keystore 加密存储（core/security/SecurityStore）。",
-    onBack = onBack
-)

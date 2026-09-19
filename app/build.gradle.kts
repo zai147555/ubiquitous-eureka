@@ -13,8 +13,8 @@ android {
         applicationId = "com.nekonyan.assistant"
         minSdk = 31            // 需求：Android 12+（API 31+）
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }

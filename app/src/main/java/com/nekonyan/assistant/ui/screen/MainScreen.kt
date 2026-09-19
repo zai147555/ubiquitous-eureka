@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Send
@@ -39,6 +41,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,11 +74,22 @@ fun MainScreen(
     onSend: (String) -> Unit = {},
     onEmergencyStop: () -> Unit = {},
     runningTaskLabel: String? = null,
-    messages: List<ChatMessage> = emptyList()
+    messages: List<ChatMessage> = emptyList(),
+    /** 正在流式接收的回复（还没落库，边收边显示） */
+    streamingText: String = "",
+    errorText: String? = null,
+    onDismissError: () -> Unit = {}
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
+
+    // 新消息 / 新字进来都要能看到：自动滚到底部
+    LaunchedEffect(messages.size, streamingText) {
+        val total = messages.size + if (streamingText.isNotEmpty()) 1 else 0
+        if (total > 0) listState.scrollToItem(total - 1)
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -129,7 +143,13 @@ fun MainScreen(
                     RunningTaskBanner(runningTaskLabel)
                 }
 
+                // 出错要看得见、能关掉（例如"还没填 API Key"）
+                if (errorText != null) {
+                    ErrorBanner(errorText, onDismissError)
+                }
+
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
@@ -137,6 +157,22 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(messages, key = { it.id }) { msg -> ChatBubble(msg) }
+
+                    if (streamingText.isNotEmpty()) {
+                        item(key = "streaming") {
+                            ChatBubble(
+                                ChatMessage(
+                                    id = "streaming",
+                                    text = streamingText + " ▍",
+                                    fromUser = false
+                                )
+                            )
+                        }
+                    } else if (runningTaskLabel != null) {
+                        item(key = "thinking") {
+                            ChatBubble(ChatMessage(id = "thinking", text = "正在思考…", fromUser = false))
+                        }
+                    }
                 }
 
                 // 需求：始终有紧急停止按钮
@@ -146,6 +182,29 @@ fun MainScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 4.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorBanner(text: String, onDismiss: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Filled.Close, contentDescription = "关闭提示")
             }
         }
     }
