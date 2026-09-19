@@ -69,6 +69,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <!-- M4：屏幕捕获前台服务（Android 14 起必须声明 foregroundServiceType） -->
+        <service
+            android:name=".core.capture.ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
         <!--
           无障碍服务（只读语义树采集）。exported=true + BIND_ACCESSIBILITY_SERVICE 是系统绑定所必需：
           系统进程要能绑定它，而权限声明保证只有系统能绑。
