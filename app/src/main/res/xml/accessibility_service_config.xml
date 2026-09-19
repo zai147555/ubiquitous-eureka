@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无障碍服务配置（只读）。
+  只订阅"窗口变化"类事件用于判断最近活跃的 App，不订阅点击/按键，
+  也刻意不开 flagRequestFilterKeyEvents（那会引入按键记录能力）。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="300"
+    android:summary="@string/accessibility_service_summary" />

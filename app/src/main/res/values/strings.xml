@@ -35,4 +35,7 @@
     <string name="mode_switch_hint">切换提示</string>
 
     <string name="empty_placeholder">本页将在后续里程碑实现</string>
+    <!-- 无障碍服务说明（显示在系统「无障碍」列表里） -->
+    <string name="accessibility_service_description">只读读取当前界面的文字与控件结构，用于整理与总结；不会代替你点击或输入。</string>
+    <string name="accessibility_service_summary">只读模式：不点击、不输入、不后台抓取</string>
 </resources>

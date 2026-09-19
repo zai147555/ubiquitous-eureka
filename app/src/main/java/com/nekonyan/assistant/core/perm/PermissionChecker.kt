@@ -35,13 +35,15 @@ object PermissionChecker {
                 if (Settings.canDrawOverlays(context)) PermissionState.GRANTED else PermissionState.DENIED
 
             PermissionGuide.KEY_ACCESSIBILITY -> {
-                // 本应用尚未提供无障碍服务（M3），因此如实报告"需手动开启"而不是假装已开
+                // 本应用已声明 NekoAccessibilityService：系统里能查到就是已开启，
+                // 查不到就是"可申请但未开启"（DENIED），引导页据此显示「去授权」并跳无障碍设置。
                 val enabled = Settings.Secure.getString(
                     context.contentResolver,
                     Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
                 ).orEmpty()
-                if (enabled.contains(context.packageName)) PermissionState.GRANTED
-                else PermissionState.MANUAL
+                val connected = com.nekonyan.assistant.core.access.NekoAccessibilityService.isConnected()
+                if (connected || enabled.contains(context.packageName)) PermissionState.GRANTED
+                else PermissionState.DENIED
             }
 
             PermissionGuide.KEY_SCREEN_CAPTURE -> PermissionState.MANUAL
