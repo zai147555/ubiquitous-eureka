@@ -228,6 +228,9 @@ interface PersonaDao {
     @Query("SELECT * FROM ai_persona WHERE isDefault = 1 LIMIT 1")
     suspend fun defaultPersona(): AIPersona?
 
+    @Query("SELECT * FROM ai_persona ORDER BY createdAt ASC")
+    suspend fun all(): List<AIPersona>
+
     @Upsert
     suspend fun upsert(persona: AIPersona)
 

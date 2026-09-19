@@ -195,7 +195,9 @@ fun MainScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(messages, key = { it.id }) { msg -> ChatBubble(msg) }
+                    items(messages, key = { it.id }) { msg ->
+                        ChatBubble(msg, status = if (msg.fromUser) "已发送" else null)
+                    }
 
                     if (streamingText.isNotEmpty()) {
                         item(key = "streaming") {
@@ -204,7 +206,8 @@ fun MainScreen(
                                     id = "streaming",
                                     text = streamingText + " ▍",
                                     fromUser = false
-                                )
+                                ),
+                                status = "生成中…"
                             )
                         }
                     } else if (runningTaskLabel != null) {
@@ -320,8 +323,12 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+/**
+ * 气泡：自己靠右、AI 靠左，底部一行显示**时间 + 状态**（`修改.ds` 第二项）。
+ * 长文本自动换行：Text 默认 softWrap，气泡宽度限制在 82% 以内，不会横向溢出。
+ */
 @Composable
-private fun ChatBubble(msg: ChatMessage) {
+private fun ChatBubble(msg: ChatMessage, status: String? = null) {
     val alignment = if (msg.fromUser) Alignment.CenterEnd else Alignment.CenterStart
     val bg = if (msg.fromUser) {
         MaterialTheme.colorScheme.primaryContainer
@@ -344,21 +351,48 @@ private fun ChatBubble(msg: ChatMessage) {
             ),
             modifier = Modifier.fillMaxWidth(0.82f)
         ) {
-            Text(
-                text = msg.text,
-                color = fg,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-            )
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Text(
+                    text = msg.text,
+                    color = fg,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        formatChatTime(msg.timestamp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = fg.copy(alpha = 0.7f)
+                    )
+                    if (status != null) {
+                        Text(
+                            " · $status",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = fg.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
+/** 聊天时间：只显示时分，聊天列表里精确到秒反而更吵 */
+private val chatTimeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA)
+
+private fun formatChatTime(ts: Long): String = chatTimeFormat.format(java.util.Date(ts))
 
 /** 侧边菜单选中项 */
 enum class NekoRoute(val label: String) {
     CHAT("聊天"),
     KNOWLEDGE("知识库"),
     TASKS("任务"),
+    PERSONA("人格"),
     MUSIC("音乐"),
     YOLO("YOLO 模型"),
     PLUGIN("插件"),

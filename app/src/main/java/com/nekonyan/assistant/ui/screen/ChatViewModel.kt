@@ -15,6 +15,7 @@ import com.nekonyan.assistant.data.db.Message
 import com.nekonyan.assistant.data.db.NekoDatabase
 import com.nekonyan.assistant.data.repo.ChatConfigStore
 import com.nekonyan.assistant.data.repo.ChatRepository
+import com.nekonyan.assistant.data.repo.PersonaRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,7 +49,10 @@ data class ChatUiState(
  *      只有 cancel 掉 OkHttp 的 Call 才能**立刻**停下（否则要等到下一个数据包）。
  *      停止时已收到的部分照样落库，不让用户白等。
  */
-class ChatViewModel(private val repo: ChatRepository) : ViewModel() {
+class ChatViewModel(
+    private val repo: ChatRepository,
+    private val personas: PersonaRepository
+) : ViewModel() {
 
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
@@ -113,11 +117,13 @@ class ChatViewModel(private val repo: ChatRepository) : ViewModel() {
             _state.update { it.copy(streaming = true, streamingText = "", error = null) }
 
             val history = repo.promptHistory(sid)
+            // 当前人格（`修改.ds` 第一项：当前人格用于聊天/悬浮窗/任务）
+            val persona = personas.currentPersona()
             val system = PromptComposer.systemPrompt(
-                personaName = null,          // 人格接入在后续里程碑（实体与默认种子已就绪）
-                personaDescription = null,
+                personaName = persona?.name,
+                personaDescription = persona?.description,
                 modeLabel = mode.label,
-                knowledge = emptyList()      // 知识库注入同样留到后续里程碑
+                knowledge = emptyList()      // 知识库注入留到后续里程碑
             )
 
             val outcome = withContext(Dispatchers.IO) {
@@ -185,10 +191,11 @@ class ChatViewModel(private val repo: ChatRepository) : ViewModel() {
             initializer {
                 val db = NekoDatabase.get(NekoApp.get())
                 ChatViewModel(
-                    ChatRepository(
+                    repo = ChatRepository(
                         dao = db.conversationDao(),
                         configStore = ChatConfigStore(NekoApp.context())
-                    )
+                    ),
+                    personas = PersonaRepository(db.personaDao(), NekoApp.context())
                 )
             }
         }

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.outlined.Article
@@ -34,8 +35,10 @@ import androidx.compose.ui.unit.dp
 import com.nekonyan.assistant.ui.screen.NekoRoute
 
 /**
- * 侧边菜单（需求：右上三条杠展开；顺序为
- * 知识库、任务、音乐、**YOLO 模型**、插件、配置、设置、全部日志 —— 不可更改）
+ * 侧边菜单（需求：右上三条杠展开）。顺序为：
+ * 聊天、知识库、任务、**人格**、音乐、**YOLO 模型**、插件、配置、设置、全部日志。
+ * 「聊天」这一条是保留的既有入口 —— 需求清单里没列它，但侧边栏是唯一导航入口，
+ * 去掉它用户从功能页返回后就没有回到聊天的入口了（`修改.ds`：不破坏现有入口）。
  *
  * 菜单顺序与文案严格按需求给出，不额外增删 —— 插件的自定义 UI 能力（需求：插件可改所有 UI）
  * 走 plugin 模块，不通过在这里加条目实现。
@@ -46,6 +49,7 @@ val NekoDrawerEntries: List<DrawerEntry> = listOf(
     DrawerEntry(NekoRoute.CHAT, Icons.AutoMirrored.Outlined.Article),
     DrawerEntry(NekoRoute.KNOWLEDGE, Icons.Filled.MenuBook),
     DrawerEntry(NekoRoute.TASKS, Icons.Filled.Build),
+    DrawerEntry(NekoRoute.PERSONA, Icons.Filled.Person),
     DrawerEntry(NekoRoute.MUSIC, Icons.Filled.MusicNote),
     DrawerEntry(NekoRoute.YOLO, Icons.Filled.Memory),
     DrawerEntry(NekoRoute.PLUGIN, Icons.Filled.Extension),

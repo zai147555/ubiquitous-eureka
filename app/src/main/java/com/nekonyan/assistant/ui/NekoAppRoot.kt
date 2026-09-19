@@ -20,6 +20,7 @@ import com.nekonyan.assistant.ui.screen.LogScreen
 import com.nekonyan.assistant.ui.screen.MainScreen
 import com.nekonyan.assistant.ui.screen.MusicScreen
 import com.nekonyan.assistant.ui.screen.NekoRoute
+import com.nekonyan.assistant.ui.screen.PersonaScreen
 import com.nekonyan.assistant.ui.screen.PluginScreen
 import com.nekonyan.assistant.ui.screen.SettingsScreen
 import com.nekonyan.assistant.ui.screen.TasksScreen
@@ -94,6 +95,7 @@ fun NekoAppRoot() {
                     onAutoSend = chatVm::send
                 )
 
+                NekoRoute.PERSONA -> PersonaScreen(onBack = backToChat)
                 NekoRoute.MUSIC -> MusicScreen(onBack = backToChat)
                 NekoRoute.YOLO -> YoloModelScreen(onBack = backToChat)
                 NekoRoute.PLUGIN -> PluginScreen(onBack = backToChat)
