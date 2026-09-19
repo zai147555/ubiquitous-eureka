@@ -71,12 +71,16 @@ class ThemeAndMotionTest {
     @Test
     fun `高对比度主题是纯黑白`() {
         val s = colorSchemeFor(NekoThemeId.CONTRAST)
-        // 用 ULong 位值比较，避免 Float 通道的精确比较（ColorSpace 转换会带来微小误差）
-        assertEquals(Color.Black.value, s.background.value)
-        assertEquals(Color.White.value, s.onBackground.value)
-        // 同时确认视觉上是"黑底白字"（宽容差，防止色空间差异导致误判）
-        assertTrue("背景应接近全黑", s.background.red < 0.02f)
-        assertTrue("前景应接近全白", s.onBackground.red > 0.98f)
+        // ★ 不要比较 Color.value（ULong）：Color.Black 走 ColorSpace 定义，
+        //   而 Color(0xFF000000) 走 32 位打包构造，两者内部表示不同但视觉等价。
+        //   断言应该针对「视觉上的颜色分量」，并留出浮点容差。
+        val eps = 0.002f
+        assertEquals("背景应接近纯黑(R)", 0f, s.background.red, eps)
+        assertEquals("背景应接近纯黑(G)", 0f, s.background.green, eps)
+        assertEquals("背景应接近纯黑(B)", 0f, s.background.blue, eps)
+        assertEquals("前景应接近纯白(R)", 1f, s.onBackground.red, eps)
+        assertEquals("前景应接近纯白(G)", 1f, s.onBackground.green, eps)
+        assertEquals("前景应接近纯白(B)", 1f, s.onBackground.blue, eps)
     }
 
     @Test
