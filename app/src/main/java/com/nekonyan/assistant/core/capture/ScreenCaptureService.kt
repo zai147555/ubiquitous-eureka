@@ -44,6 +44,9 @@ import com.nekonyan.assistant.core.yolo.NcnnDetector
  */
 class ScreenCaptureService : Service() {
 
+    private val CHANNEL_ID = "nekonyan_capture"
+    private val NOTIF_ID = 1001
+
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var reader: ImageReader? = null

@@ -65,6 +65,7 @@ fun YoloModelScreen(
     vm: YoloModelViewModel = viewModel(factory = YoloModelViewModel.Factory)
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     // 导出是"先选位置、再写文件"两段式：这里记住要导出的模型 id
     var pendingExportId by remember { mutableStateOf<String?>(null) }
 
