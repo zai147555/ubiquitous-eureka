@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
@@ -33,7 +34,8 @@ import androidx.compose.ui.unit.dp
 import com.nekonyan.assistant.ui.screen.NekoRoute
 
 /**
- * 侧边菜单（需求：右上三条杠展开；含 知识库、任务、音乐、插件、配置、设置、全部日志）
+ * 侧边菜单（需求：右上三条杠展开；顺序为
+ * 知识库、任务、音乐、**YOLO 模型**、插件、配置、设置、全部日志 —— 不可更改）
  *
  * 菜单顺序与文案严格按需求给出，不额外增删 —— 插件的自定义 UI 能力（需求：插件可改所有 UI）
  * 走 plugin 模块，不通过在这里加条目实现。
@@ -45,6 +47,7 @@ val NekoDrawerEntries: List<DrawerEntry> = listOf(
     DrawerEntry(NekoRoute.KNOWLEDGE, Icons.Filled.MenuBook),
     DrawerEntry(NekoRoute.TASKS, Icons.Filled.Build),
     DrawerEntry(NekoRoute.MUSIC, Icons.Filled.MusicNote),
+    DrawerEntry(NekoRoute.YOLO, Icons.Filled.Memory),
     DrawerEntry(NekoRoute.PLUGIN, Icons.Filled.Extension),
     DrawerEntry(NekoRoute.CONFIG, Icons.Filled.Tune),
     DrawerEntry(NekoRoute.SETTINGS, Icons.Filled.Settings),

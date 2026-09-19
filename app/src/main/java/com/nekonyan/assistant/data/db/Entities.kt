@@ -362,3 +362,176 @@ data class RunModeConfig(
     /** 需求：Shizuku 未授权 → 回退视觉辅助 */
     val fallbackBehavior: String = "visual_only"
 )
+
+// ============================ YOLO 模型（yolo.ds 第 124~130 行） ============================
+//
+// 说明：这一组表的字段严格按 yolo.ds 给出的清单建立，**不合并、不省略** ——
+// 模型管理页要展示的「签名状态 / 来源 / 回滚 / 灰度」等列都直接来自这里，
+// 少一个字段就要在界面层临时拼字符串，早晚拼错。
+
+/** yolo.ds 第 124 行：YoloModel */
+@Entity(tableName = "yolo_model")
+data class YoloModelEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val version: String,
+    /** 模型目录（内含 .param/.bin/labels.txt） */
+    val dirPath: String,
+    val paramPath: String,
+    val binPath: String,
+    val sizeBytes: Long = 0,
+    val classCount: Int = 0,
+    val inputSize: Int = 640,
+    /** vulkan | cpu | npu */
+    val backend: String = BACKEND_VULKAN,
+    val latencyMs: Int = 0,
+    val accuracy: Float = 0f,
+    val powerUsage: Float = 0f,
+    val temperature: Float = 0f,
+    /** builtin | local | share | zip | lan | server */
+    val source: String = SOURCE_LOCAL,
+    /** sha256（空 = 未做签名校验） */
+    val signature: String = "",
+    /** enabled | disabled | current | rollbackable | error */
+    val status: String = STATUS_DISABLED,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        const val BACKEND_VULKAN = "vulkan"
+        const val BACKEND_CPU = "cpu"
+        const val BACKEND_NPU = "npu"
+
+        const val SOURCE_BUILTIN = "builtin"
+        const val SOURCE_LOCAL = "local"
+        const val SOURCE_SHARE = "share"
+        const val SOURCE_ZIP = "zip"
+        const val SOURCE_LAN = "lan"
+        const val SOURCE_SERVER = "server"
+
+        const val STATUS_ENABLED = "enabled"
+        const val STATUS_DISABLED = "disabled"
+        const val STATUS_CURRENT = "current"
+        const val STATUS_ROLLBACKABLE = "rollbackable"
+        const val STATUS_ERROR = "error"
+    }
+}
+
+/** yolo.ds 第 125 行：YoloModelVersion */
+@Entity(
+    tableName = "yolo_model_version",
+    foreignKeys = [ForeignKey(
+        entity = YoloModelEntity::class,
+        parentColumns = ["id"], childColumns = ["modelId"],
+        onDelete = ForeignKey.CASCADE
+    )],
+    indices = [Index("modelId")]
+)
+data class YoloModelVersionEntity(
+    @PrimaryKey val id: String,
+    val modelId: String,
+    val version: String,
+    val path: String,
+    val sizeBytes: Long = 0,
+    val createdAt: Long = System.currentTimeMillis(),
+    val deprecated: Boolean = false
+)
+
+/** yolo.ds 第 126 行：YoloModelSwitchRecord */
+@Entity(tableName = "yolo_model_switch_record")
+data class YoloModelSwitchRecordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fromModel: String,
+    val toModel: String,
+    /** manual | auto:normal | auto:combat | auto:low_power … */
+    val reason: String,
+    val latencyMs: Int = 0,
+    val success: Boolean = true,
+    val message: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/** yolo.ds 第 127 行：YoloModelImportRecord */
+@Entity(tableName = "yolo_model_import_record")
+data class YoloModelImportRecordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** local | share | zip | lan | server */
+    val sourceType: String,
+    val sourceUri: String = "",
+    val modelId: String = "",
+    /** ok | failed | checking */
+    val status: String,
+    val errorMessage: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/** yolo.ds 第 128 行：YoloModelExportRecord */
+@Entity(tableName = "yolo_model_export_record")
+data class YoloModelExportRecordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val modelId: String,
+    val exportUri: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/** yolo.ds 第 129 行：YoloModelUpdateRecord */
+@Entity(tableName = "yolo_model_update_record")
+data class YoloModelUpdateRecordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fromVersion: String,
+    val toVersion: String,
+    /** checking | downloading | verifying | done | failed */
+    val status: String,
+    val downloadedAt: Long = 0,
+    val switchedAt: Long = 0,
+    val rolledBack: Boolean = false,
+    val message: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/** yolo.ds 第 130 行：YoloModelPerformance */
+@Entity(
+    tableName = "yolo_model_performance",
+    indices = [Index("modelId")]
+)
+data class YoloModelPerformanceEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val modelId: String,
+    /** normal | combat | long_task | low_power | speed | high_accuracy */
+    val scene: String,
+    val fps: Float = 0f,
+    val latencyMs: Int = 0,
+    val powerUsage: Float = 0f,
+    val temperature: Float = 0f,
+    val accuracy: Float = 0f,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/** yolo.ds 第 106~123 行：YoloModelConfig（单行配置表，id 恒为 [CONFIG_ID]） */
+@Entity(tableName = "yolo_model_config")
+data class YoloModelConfigEntity(
+    @PrimaryKey val id: Int = CONFIG_ID,
+    val currentModelId: String = "",
+    val defaultModelId: String = "",
+    val autoSwitch: Boolean = false,
+    /** 逗号分隔的触发条件键，便于以后扩展而不改表 */
+    val switchConditions: String = "low_power,thermal",
+    val switchCooldownMs: Long = 60_000,
+    val longTaskForceModel: String = "",
+    val lowBatteryForceModel: String = "",
+    val thermalForceModel: String = "",
+    val keepVersions: Int = 3,
+    val wifiOnly: Boolean = true,
+    val autoUpdate: Boolean = false,
+    val grayRelease: Boolean = false,
+    val abTest: Boolean = false,
+    val signatureCheck: Boolean = true,
+    val allowImport: Boolean = true,
+    val allowExport: Boolean = true,
+    val allowDelete: Boolean = true,
+    val killSwitchEnabled: Boolean = false
+) {
+    companion object {
+        const val CONFIG_ID = 1
+    }
+}

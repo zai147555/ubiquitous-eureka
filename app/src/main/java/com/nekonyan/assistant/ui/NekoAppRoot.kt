@@ -23,6 +23,7 @@ import com.nekonyan.assistant.ui.screen.NekoRoute
 import com.nekonyan.assistant.ui.screen.PluginScreen
 import com.nekonyan.assistant.ui.screen.SettingsScreen
 import com.nekonyan.assistant.ui.screen.TasksScreen
+import com.nekonyan.assistant.ui.screen.YoloModelScreen
 import com.nekonyan.assistant.ui.theme.NekoTheme
 import com.nekonyan.assistant.ui.theme.ThemeViewModel
 
@@ -94,6 +95,7 @@ fun NekoAppRoot() {
                 )
 
                 NekoRoute.MUSIC -> MusicScreen(onBack = backToChat)
+                NekoRoute.YOLO -> YoloModelScreen(onBack = backToChat)
                 NekoRoute.PLUGIN -> PluginScreen(onBack = backToChat)
                 NekoRoute.CONFIG -> ConfigScreen(onBack = backToChat)
                 NekoRoute.SETTINGS -> SettingsScreen(

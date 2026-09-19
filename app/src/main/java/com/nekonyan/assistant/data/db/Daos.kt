@@ -407,3 +407,91 @@ interface RunModeDao {
     @Upsert
     suspend fun upsert(config: RunModeConfig)
 }
+
+// ============================ YOLO 模型（yolo.ds） ============================
+
+@Dao
+interface YoloModelDao {
+
+    @Query("SELECT * FROM yolo_model ORDER BY updatedAt DESC")
+    fun observeModels(): Flow<List<YoloModelEntity>>
+
+    @Query("SELECT * FROM yolo_model ORDER BY updatedAt DESC")
+    suspend fun all(): List<YoloModelEntity>
+
+    @Query("SELECT * FROM yolo_model WHERE id = :id")
+    suspend fun byId(id: String): YoloModelEntity?
+
+    @Upsert
+    suspend fun upsert(model: YoloModelEntity)
+
+    @Query("DELETE FROM yolo_model WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("UPDATE yolo_model SET status = :status, updatedAt = :at WHERE id = :id")
+    suspend fun setStatus(id: String, status: String, at: Long)
+
+    // ---- 版本 ----
+
+    @Query("SELECT * FROM yolo_model_version WHERE modelId = :modelId ORDER BY createdAt DESC")
+    fun observeVersions(modelId: String): Flow<List<YoloModelVersionEntity>>
+
+    @Query("SELECT * FROM yolo_model_version ORDER BY createdAt DESC")
+    suspend fun allVersions(): List<YoloModelVersionEntity>
+
+    @Upsert
+    suspend fun upsertVersion(version: YoloModelVersionEntity)
+
+    @Query("DELETE FROM yolo_model_version WHERE id IN (:ids)")
+    suspend fun deleteVersions(ids: List<String>)
+
+    // ---- 切换记录 ----
+
+    @Insert
+    suspend fun insertSwitch(record: YoloModelSwitchRecordEntity)
+
+    @Query("SELECT * FROM yolo_model_switch_record ORDER BY timestamp DESC LIMIT :limit")
+    fun observeSwitches(limit: Int = 50): Flow<List<YoloModelSwitchRecordEntity>>
+
+    // ---- 导入 / 导出 / 更新记录 ----
+
+    @Insert
+    suspend fun insertImport(record: YoloModelImportRecordEntity)
+
+    @Query("SELECT * FROM yolo_model_import_record ORDER BY createdAt DESC LIMIT :limit")
+    fun observeImports(limit: Int = 50): Flow<List<YoloModelImportRecordEntity>>
+
+    @Insert
+    suspend fun insertExport(record: YoloModelExportRecordEntity)
+
+    @Query("SELECT * FROM yolo_model_export_record ORDER BY createdAt DESC LIMIT :limit")
+    fun observeExports(limit: Int = 50): Flow<List<YoloModelExportRecordEntity>>
+
+    @Insert
+    suspend fun insertUpdate(record: YoloModelUpdateRecordEntity)
+
+    @Query("SELECT * FROM yolo_model_update_record ORDER BY createdAt DESC LIMIT :limit")
+    fun observeUpdates(limit: Int = 50): Flow<List<YoloModelUpdateRecordEntity>>
+
+    // ---- 性能 ----
+
+    @Insert
+    suspend fun insertPerformance(record: YoloModelPerformanceEntity)
+
+    @Query("SELECT * FROM yolo_model_performance WHERE modelId = :modelId ORDER BY timestamp DESC LIMIT :limit")
+    fun observePerformance(modelId: String, limit: Int = 100): Flow<List<YoloModelPerformanceEntity>>
+
+    @Query("SELECT * FROM yolo_model_performance ORDER BY timestamp DESC LIMIT :limit")
+    fun observeAllPerformance(limit: Int = 100): Flow<List<YoloModelPerformanceEntity>>
+
+    // ---- 配置（单行） ----
+
+    @Query("SELECT * FROM yolo_model_config WHERE id = 1")
+    fun observeConfig(): Flow<YoloModelConfigEntity?>
+
+    @Query("SELECT * FROM yolo_model_config WHERE id = 1")
+    suspend fun config(): YoloModelConfigEntity?
+
+    @Upsert
+    suspend fun upsertConfig(config: YoloModelConfigEntity)
+}

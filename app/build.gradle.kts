@@ -13,8 +13,8 @@ android {
         applicationId = "com.nekonyan.assistant"
         minSdk = 31            // 需求：Android 12+（API 31+）
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -108,4 +108,31 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
+}
+
+// ============================ 内置 YOLO 模型 ============================
+//
+// 构建前把内置的 YOLOv11n（NCNN 的 .param + .bin + 类别表）取到
+// app/src/main/assets/models/v1/，脚本幂等：已存在且校验通过就直接跳过。
+//
+// 为什么挂在 Gradle 而不是 CI 的 yml 里：
+//   `.github/workflows/` 的改动需要 token 具备 workflow 权限，缺权限时 GitHub 会
+//   直接拒绝**整棵树**（表现为 404，很难查）。而"APK 里要有模型"这件事与在哪儿
+//   触发构建无关 —— 挂到 preBuild 上，本地构建与 CI 都会得到带模型的包。
+//
+// 离线构建：加 -PskipYoloModel=true 跳过（此时 APK 不含内置模型，
+// 应用界面会如实显示"还没有可用模型"，不会假装有）。
+val skipYoloModel: Boolean = providers.gradleProperty("skipYoloModel").isPresent
+
+val fetchYoloModel = tasks.register<Exec>("fetchYoloModel") {
+    group = "nekonyan"
+    description = "取内置 YOLOv11n 到 app/src/main/assets/models/v1（幂等）"
+    workingDir = rootProject.projectDir
+    commandLine("bash", "tools/fetch_yolo_model.sh")
+    onlyIf { !skipYoloModel }
+}
+
+// preBuild 由 AGP 注册；用 matching 而不是 named，避免注册顺序导致的配置期报错
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(fetchYoloModel)
 }

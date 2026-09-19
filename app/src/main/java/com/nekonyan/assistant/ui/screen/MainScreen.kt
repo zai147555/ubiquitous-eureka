@@ -360,6 +360,7 @@ enum class NekoRoute(val label: String) {
     KNOWLEDGE("知识库"),
     TASKS("任务"),
     MUSIC("音乐"),
+    YOLO("YOLO 模型"),
     PLUGIN("插件"),
     CONFIG("配置"),
     SETTINGS("设置"),

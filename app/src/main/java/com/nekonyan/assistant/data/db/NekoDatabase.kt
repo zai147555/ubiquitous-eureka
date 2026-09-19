@@ -27,9 +27,13 @@ import com.nekonyan.assistant.core.util.NekoMode
         AIKnowledgeItem::class, AIKnowledgeImage::class,
         Task::class, ModeTask::class, ModeTaskField::class, ModeTaskPermission::class,
         AIPersona::class, ConversationSession::class, Message::class, ContextCompression::class,
-        LogEntry::class, PluginEntity::class, EnvironmentCheckRecord::class, RunModeConfig::class
+        LogEntry::class, PluginEntity::class, EnvironmentCheckRecord::class, RunModeConfig::class,
+        // yolo.ds 第 124~130 行：模型管理的 8 张表
+        YoloModelEntity::class, YoloModelVersionEntity::class, YoloModelSwitchRecordEntity::class,
+        YoloModelImportRecordEntity::class, YoloModelExportRecordEntity::class,
+        YoloModelUpdateRecordEntity::class, YoloModelPerformanceEntity::class, YoloModelConfigEntity::class
     ],
-    version = 1,
+    version = 2,
     // 关闭 schema 导出：本工程尚无迁移需求。开启时需要确保 schemas/ 目录
     // 已存在且随仓库提交，否则 Room 会报 "Empty schema file"（CI 上踩过这个坑）。
     // 将来做数据库迁移时：改成 true + ksp arg room.schemaLocation + 提交 app/schemas/。
@@ -49,6 +53,7 @@ abstract class NekoDatabase : RoomDatabase() {
     abstract fun pluginDao(): PluginDao
     abstract fun environmentDao(): EnvironmentDao
     abstract fun runModeDao(): RunModeDao
+    abstract fun yoloModelDao(): YoloModelDao
 
     companion object {
         const val DB_NAME = "nekonyan.db"
@@ -69,6 +74,12 @@ abstract class NekoDatabase : RoomDatabase() {
         private fun build(context: Context): NekoDatabase =
             Room.databaseBuilder(context, NekoDatabase::class.java, DB_NAME)
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
+                // v1 → v2 只是**新增**了 YOLO 模型管理的 8 张表。
+                // 手写迁移的 SQL 必须与 Room 生成的建表语句逐字节一致，写错的表现是
+                // 打开数据库时抛 IllegalStateException（升级即崩），而收益只是保住
+                // 测试期的聊天记录 —— 因此在 0.2.x 阶段选择重建：数据清空，但一定起得来。
+                // 上线前若要保数据：开启 exportSchema + 提交 schemas/ + 写正式 Migration。
+                .fallbackToDestructiveMigration()
                 .build()
 
         /**

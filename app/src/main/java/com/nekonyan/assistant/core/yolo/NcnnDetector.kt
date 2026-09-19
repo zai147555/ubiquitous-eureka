@@ -24,6 +24,9 @@ object NcnnDetector {
 
     private const val TAG = "NcnnDetector"
     private const val ASSETS_FALLBACK = "models/v1"
+
+    /** 内置模型的基名（与 tools/fetch_yolo_model.sh 落地的文件名、assets 目录一致） */
+    private const val MODEL_BASE = ModelPolicy.BUILTIN
     private const val DEFAULT_INPUT_SIZE = 640
     private const val DEFAULT_MAX_DETECTIONS = 100
 
@@ -69,8 +72,14 @@ object NcnnDetector {
             val binPath: String
             val dirLabels: List<String>
 
-            val param = modelDir?.let { File(it, "yolov8n.param") }
-            val bin = modelDir?.let { File(it, "yolov8n.bin") }
+            // 从目录里**认**模型而不是写死文件名：导入的模型可能叫 yolo11n / yolov8n / yolov5n，
+            // 写死会导致"导入成功、却永远回退 assets"这种极难排查的现象。
+            val param = modelDir?.let { dir ->
+                dir.listFiles()?.firstOrNull { it.isFile && it.extension.equals("param", true) }
+            }
+            val bin = param?.let { p ->
+                File(p.parentFile, p.nameWithoutExtension + ".bin").takeIf { it.isFile }
+            }
             if (param != null && bin != null && param.exists() && bin.exists()) {
                 paramPath = param.absolutePath
                 binPath = bin.absolutePath
@@ -120,7 +129,7 @@ object NcnnDetector {
     private fun extractAssets(context: Context): Triple<String, String, List<String>> {
         val out = File(context.filesDir, "assets_models").apply { mkdirs() }
         var labelsOut: List<String> = emptyList()
-        listOf("yolov8n.param", "yolov8n.bin", "labels.txt").forEach { name ->
+        listOf("$MODEL_BASE.param", "$MODEL_BASE.bin", "labels.txt").forEach { name ->
             try {
                 val dst = File(out, name)
                 // 已存在但为空视作无效，重新释放
@@ -135,8 +144,8 @@ object NcnnDetector {
             }
         }
         return Triple(
-            File(out, "yolov8n.param").absolutePath,
-            File(out, "yolov8n.bin").absolutePath,
+            File(out, "$MODEL_BASE.param").absolutePath,
+            File(out, "$MODEL_BASE.bin").absolutePath,
             labelsOut
         )
     }
