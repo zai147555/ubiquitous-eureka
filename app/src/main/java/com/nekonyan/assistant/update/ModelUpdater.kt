@@ -63,7 +63,7 @@ class ModelUpdater(
          */
         // Ed25519 公钥（SPKI DER 的 Base64）—— 与私钥成对；私钥只在服务端 ED25519_PRIVATE_HEX 里。
     // 由 tools/model_release.md 的流程生成；替换掉这行即代表「更新通道已武装」。
-    private const val PUBLIC_KEY_B64 = "MCowBQYDK2VwAyEAjqUqwd8BUY+RzEw133FAMt9kBZr7Gm/QbjVQwS5ZnEU="
+    private const val PUBLIC_KEY_B64 = "MCowBQYDK2VwAyEAD9OjYOwQiieB+PitJBAGQVrbhiNz25VGDK05QOPYs34="
 
         private const val KEY_NOT_SET = "REPLACE_WITH"
 
