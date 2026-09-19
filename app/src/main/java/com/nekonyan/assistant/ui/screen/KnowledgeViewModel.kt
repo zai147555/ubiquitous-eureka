@@ -7,10 +7,14 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nekonyan.assistant.NekoApp
 import com.nekonyan.assistant.core.log.NekoLog
+import com.nekonyan.assistant.data.db.AIKnowledgeBase
+import com.nekonyan.assistant.data.db.AIKnowledgeCategory
+import com.nekonyan.assistant.data.db.AIKnowledgeItem
 import com.nekonyan.assistant.data.db.KnowledgeBase
 import com.nekonyan.assistant.data.db.KnowledgeCategory
 import com.nekonyan.assistant.data.db.KnowledgeItem
 import com.nekonyan.assistant.data.db.NekoDatabase
+import com.nekonyan.assistant.data.repo.AIKnowledgeRepository
 import com.nekonyan.assistant.data.repo.KnowledgeRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,8 +33,33 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class KnowledgeViewModel(
-    private val repo: KnowledgeRepository
+    private val repo: KnowledgeRepository,
+    private val aiRepo: AIKnowledgeRepository
 ) : ViewModel() {
+
+    // ---------------- AI 知识库（修改.ds 第三项：用户只读、AI 可读写） ----------------
+
+    val aiBase: StateFlow<AIKnowledgeBase?> = aiRepo.observeBase()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val aiCategories: StateFlow<List<AIKnowledgeCategory>> = aiRepo.observeBase()
+        .flatMapLatest { base -> if (base == null) flowOf(emptyList()) else aiRepo.observeCategories(base.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _selectedAiCategoryId = MutableStateFlow<String?>(null)
+    val selectedAiCategoryId: StateFlow<String?> = _selectedAiCategoryId
+
+    val aiItems: StateFlow<List<AIKnowledgeItem>> = _selectedAiCategoryId
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else aiRepo.observeItems(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun selectAiCategory(id: String?) { _selectedAiCategoryId.value = id }
+
+    /** 需求：AI 读取受设置开关控制，默认开启 */
+    fun setAiReadable(enabled: Boolean) = viewModelScope.launch { aiRepo.setReadableByAI(enabled) }
+
+    /** 用户查看 AI 知识库时留痕（与"AI 读取"区分开） */
+    fun logAiView() = viewModelScope.launch { aiRepo.logUserView(aiItems.value.size) }
 
     val bases: StateFlow<List<KnowledgeBase>> = repo.observeBases()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -112,7 +141,10 @@ class KnowledgeViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val db = NekoDatabase.get(NekoApp.get())
-                KnowledgeViewModel(KnowledgeRepository(db.knowledgeDao()))
+                KnowledgeViewModel(
+                    repo = KnowledgeRepository(db.knowledgeDao()),
+                    aiRepo = AIKnowledgeRepository(db.aiKnowledgeDao())
+                )
             }
         }
     }

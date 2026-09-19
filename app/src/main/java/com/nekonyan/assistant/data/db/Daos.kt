@@ -114,6 +114,10 @@ interface AIKnowledgeDao {
     @Query("SELECT * FROM ai_knowledge_item ORDER BY createdAt DESC")
     fun observeItems(): Flow<List<AIKnowledgeItem>>
 
+    /** 一次性快照（AI 读取用；Flow 版不能当 suspend 列表使用） */
+    @Query("SELECT * FROM ai_knowledge_item ORDER BY createdAt DESC")
+    suspend fun allItems(): List<AIKnowledgeItem>
+
     @Query("SELECT * FROM ai_knowledge_item WHERE categoryId = :categoryId ORDER BY createdAt DESC")
     fun observeItemsByCategory(categoryId: String): Flow<List<AIKnowledgeItem>>
 

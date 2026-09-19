@@ -50,6 +50,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekonyan.assistant.data.db.KnowledgeCategory
 import com.nekonyan.assistant.data.db.KnowledgeItem
 import com.nekonyan.assistant.ui.theme.NekoTheme
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 
 /**
  * 知识库（需求：多个知识库，分类可独立开关，支持文本图片；支持导入、整体导出恢复）
@@ -112,6 +117,8 @@ fun KnowledgeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            AiKnowledgeSection(vm)
+
             // ---- 第一层：知识库 ----
             SectionLabel("知识库（可多个）")
             LazyRow(
@@ -321,3 +328,141 @@ private fun KnowledgeItemCard(item: KnowledgeItem, vm: KnowledgeViewModel) {
         }
     }
 }
+
+/**
+ * AI 知识库卡片（`修改.ds` 第三项）。
+ *
+ * 需求要点全部落在这里：
+ *   · **固定显示**在知识库页顶部，用主题色卡片 + 星标图标做特殊标识；
+ *   · 明确标注「AI 可读取 · 用户不可删除」；
+ *   · 用户**可以查看**分类与条目，但界面**不提供**任何删除/重命名/清空入口
+ *     （不是"按钮置灰"，而是根本没有这个入口 —— 从源头杜绝误删）；
+ *   · 「允许 AI 读取」开关默认开启，改动落库并写只读日志；
+ *   · AI 的写入走 [com.nekonyan.assistant.data.repo.AIKnowledgeRepository.writeFromAI]，
+ *     写前必须给总结、同标题合并、可带截图。
+ */
+@Composable
+private fun AiKnowledgeSection(vm: KnowledgeViewModel) {
+    val base by vm.aiBase.collectAsStateWithLifecycle()
+    val categories by vm.aiCategories.collectAsStateWithLifecycle()
+    val items by vm.aiItems.collectAsStateWithLifecycle()
+    val selected by vm.selectedAiCategoryId.collectAsStateWithLifecycle()
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        base?.name?.ifBlank { "AI 知识库" } ?: "AI 知识库",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        "AI 可读取 · 用户不可删除 / 重命名 / 清空",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                TextButton(onClick = {
+                    expanded = !expanded
+                    if (expanded) vm.logAiView()
+                }) { Text(if (expanded) "收起" else "查看") }
+            }
+
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "允许 AI 读取（默认开启）",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Switch(
+                    checked = base?.readableByAI ?: true,
+                    onCheckedChange = { vm.setAiReadable(it) }
+                )
+            }
+
+            if (expanded) {
+                if (base == null) {
+                    Text("AI 知识库尚未初始化（首启种子数据会建立）", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    if (categories.isEmpty()) {
+                        Text("暂无分类：AI 首次写入时会自动建立「AI 自动总结」分类", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            categories.forEach { c ->
+                                FilterChip(
+                                    selected = c.id == selected,
+                                    onClick = { vm.selectAiCategory(c.id) },
+                                    label = { Text(c.name) }
+                                )
+                            }
+                        }
+                    }
+
+                    if (selected == null) {
+                        Text(
+                            "选择一个分类查看条目（只读）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    } else if (items.isEmpty()) {
+                        Text(
+                            "该分类暂无条目：AI 写入并总结后会出现在这里",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    } else {
+                        items.forEach { item ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = MaterialTheme.shapes.medium,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                    if (item.summary.isNotBlank()) {
+                                        Text(item.summary, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Text(
+                                        "来源 ${item.sourceType} · " + formatAiTime(item.createdAt),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Text(
+                        "这里只读：AI 知识库的增删改由 AI 与设置控制，界面不提供删除入口。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val aiTimeFormat = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.CHINA)
+
+private fun formatAiTime(ts: Long): String = aiTimeFormat.format(java.util.Date(ts))
