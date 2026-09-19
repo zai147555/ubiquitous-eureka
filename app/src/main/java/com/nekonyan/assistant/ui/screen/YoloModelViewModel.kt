@@ -1,6 +1,7 @@
 package com.nekonyan.assistant.ui.screen
 
 import android.net.Uri
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.nekonyan.assistant.NekoApp
 import com.nekonyan.assistant.core.log.NekoLog
 import com.nekonyan.assistant.core.yolo.ModelPolicy
+import com.nekonyan.assistant.core.yolo.NcnnDetector
 import com.nekonyan.assistant.core.yolo.SwitchGuard
 import com.nekonyan.assistant.core.yolo.YoloScene
 import com.nekonyan.assistant.data.db.NekoDatabase
@@ -26,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 /** 模型管理页状态：全部来自 Room 的 Flow，界面不自己维护第二份真相 */
 data class YoloUiState(
@@ -89,7 +92,10 @@ data class YoloUiState(
  * 所有"能不能做"的判断都不在这里 —— 切换检查、版本保留、签名比对都在
  * core/yolo（纯逻辑、本机有断言），这里只负责调用与把结果告诉界面。
  */
-class YoloModelViewModel(private val repo: YoloModelRepository) : ViewModel() {
+class YoloModelViewModel(
+    private val repo: YoloModelRepository,
+    private val appContext: android.content.Context
+) : ViewModel() {
 
     private val _state = MutableStateFlow(YoloUiState())
     val state: StateFlow<YoloUiState> = _state.asStateFlow()
@@ -145,6 +151,46 @@ class YoloModelViewModel(private val repo: YoloModelRepository) : ViewModel() {
 
     fun checkUpdate() = act("检查更新") { repo.checkUpdate() }
 
+    /**
+     * 推理自检（yolo.ds 第 78~86 行：实时 FPS / 推理延迟）。
+     *
+     * 真加载当前模型 → 跑一次预热推理 → 把**实测**延迟与 FPS 写进性能表。
+     * 原生库缺失或模型不匹配时如实报错，不编数字（页面上"未运行"就是这样来的）。
+     */
+    fun selfTest() = act("推理自检") {
+        val model = _state.value.current
+            ?: return@act YoloOpResult(false, "没有当前模型，先导入或切换一个")
+        val dir = File(model.dirPath)
+        if (!dir.isDirectory) return@act YoloOpResult(false, "模型目录不存在：${model.dirPath}")
+
+        val loaded = runCatching {
+            NcnnDetector.init(
+                context = appContext,
+                modelDir = dir,
+                numThreads = 0,
+                useGpu = false,               // 先 CPU：Vulkan 在部分设备上会初始化失败，留给后续降级策略
+                inputSize = model.inputSize
+            )
+        }.getOrElse { false }
+
+        if (!loaded) {
+            return@act YoloOpResult(
+                false,
+                "模型加载失败：原生库 libyolo_ncnn.so 缺失或模型与 JNI 不匹配（本次未写入任何性能数据）"
+            )
+        }
+
+        val t0 = SystemClock.elapsedRealtime()
+        runCatching { NcnnDetector.warmUp(320) }
+        val ms = (SystemClock.elapsedRealtime() - t0).toInt().coerceAtLeast(1)
+        repo.recordPerformance(model.id, _state.value.scene, fps = 1000f / ms, latencyMs = ms)
+        YoloOpResult(
+            true,
+            "自检完成：单帧约 ${ms}ms（${"%.1f".format(1000f / ms)} FPS）· 类别表 ${NcnnDetector.labels.size} 项" +
+                if (NcnnDetector.labels.isEmpty()) "（⚠ labels 为空，检测结果的类别名会缺失）" else ""
+        )
+    }
+
     fun importModels(uris: List<Uri>) = act("导入模型") {
         repo.importModel(uris, YoloModelEntity.SOURCE_LOCAL)
     }
@@ -173,7 +219,10 @@ class YoloModelViewModel(private val repo: YoloModelRepository) : ViewModel() {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val db = NekoDatabase.get(NekoApp.get())
-                YoloModelViewModel(YoloModelRepository(NekoApp.context(), db.yoloModelDao()))
+                YoloModelViewModel(
+                    repo = YoloModelRepository(NekoApp.context(), db.yoloModelDao()),
+                    appContext = NekoApp.context()
+                )
             }
         }
     }

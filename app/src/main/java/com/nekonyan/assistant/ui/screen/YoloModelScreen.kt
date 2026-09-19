@@ -140,6 +140,18 @@ fun YoloModelScreen(
                                 enabled = !state.busy
                             ) { Text("导出") }
                         }
+                        // 需求（yolo.ds 第 78~86 行）：延迟 / FPS 必须是实测值
+                        Button(
+                            onClick = { vm.selfTest() },
+                            enabled = !state.busy,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (state.engineReady) "重新自检（已实测 ${current.latencyMs}ms）" else "推理自检（加载模型并测一帧）") }
+                        Text(
+                            if (state.engineReady) "引擎：本地 NCNN 已跑通（数据来自实测）"
+                            else "引擎：尚未自检 —— 点上面按钮加载模型；原生库缺失时会如实报错，不会编数字",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

@@ -17,10 +17,12 @@ android {
         versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared") } }
         vectorDrawables { useSupportLibrary = true }
 
         // 需求：多 ABI（有 native 代码时才生效）
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        // 只保留 64 位：armeabi-v7a 已被 Android 15 淘汰，而多一份 ncnn 就多约 4MB 下载
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     buildTypes {
@@ -56,7 +58,10 @@ android {
         }
     }
 
+    ndkVersion = "26.1.10909125"
+
     packaging {
+        jniLibs { useLegacyPackaging = false }
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/DEPENDENCIES",
@@ -64,8 +69,8 @@ android {
         )
     }
 
-    // native（M4 起启用：把 code_native/yolo_ncnn_jni.cpp 与本文件一起拷入 src/main/cpp/）
-    // externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
+    // native（M4）：JNI 源码在 src/main/cpp/，NCNN 预编译包由 tools/fetch_ncnn.sh 在构建前放入
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
 }
 
 ksp {
@@ -136,3 +141,22 @@ val fetchYoloModel = tasks.register<Exec>("fetchYoloModel") {
 tasks.matching { it.name == "preBuild" }.configureEach {
     dependsOn(fetchYoloModel)
 }
+
+// ============================ NCNN 原生推理 ============================
+// 构建前取 NCNN 预编译包（幂等）；CMake 的 configure/build 任务都依赖它，
+// 保证 configureCMakeDebug 跑的时候 ncnn/ 已经就位。
+// 离线构建：加 -PskipNcnn=true 跳过（此时没有 libyolo_ncnn.so，应用会如实报"推理不可用"）。
+val skipNcnn: Boolean = providers.gradleProperty("skipNcnn").isPresent
+
+val fetchNcnn = tasks.register<Exec>("fetchNcnn") {
+    group = "nekonyan"
+    description = "取 NCNN 官方 Android 预编译包到 app/src/main/cpp/ncnn（幂等）"
+    workingDir = rootProject.projectDir
+    commandLine("bash", "tools/fetch_ncnn.sh")
+    onlyIf { !skipNcnn }
+}
+
+tasks.matching {
+    it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") ||
+        it.name.startsWith("externalNativeBuild") || it.name == "preBuild"
+}.configureEach { dependsOn(fetchNcnn) }
