@@ -52,13 +52,16 @@ object ChatJson {
         model: String,
         stream: Boolean,
         temperature: Double,
-        maxTokens: Int
+        maxTokens: Int,
+        /** 非空则带上 tools（function calling）；内容由 AgentJson.toolsSchema 生成 */
+        toolsJson: String? = null
     ): String = buildString {
         append("{\"model\":").append(quoted(model))
         append(",\"messages\":").append(messagesJson(messages))
         append(",\"stream\":").append(stream)
         append(",\"temperature\":").append(number(temperature))
         append(",\"max_tokens\":").append(maxTokens)
+        if (!toolsJson.isNullOrBlank()) append(",\"tools\":").append(toolsJson)
         append('}')
     }
 }

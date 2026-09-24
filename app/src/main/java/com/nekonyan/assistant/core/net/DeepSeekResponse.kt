@@ -82,4 +82,28 @@ object DeepSeekResponse {
         if (choices.length() == 0) return null
         return choices.optJSONObject(0)
     }
+
+    /**
+     * 抽取流式分片里的 tool_calls 增量（纯抽取，拼接收尾交给 ToolCallAccumulator）。
+     * 分片形如：{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1",
+     *            "function":{"name":"kb_search","arguments":"{\"q\":"}}]}}]}
+     */
+    fun toolCallDeltas(payload: String): List<com.nekonyan.assistant.core.agent.ToolCallDelta> {
+        return try {
+            val delta = firstChoice(payload)?.optJSONObject("delta") ?: return emptyList()
+            val arr = delta.optJSONArray("tool_calls") ?: return emptyList()
+            (0 until arr.length()).mapNotNull { i ->
+                val c = arr.optJSONObject(i) ?: return@mapNotNull null
+                val fn = c.optJSONObject("function")
+                com.nekonyan.assistant.core.agent.ToolCallDelta(
+                    index = c.optInt("index", i),
+                    id = c.optString("id", "").takeIf { it.isNotEmpty() },
+                    name = fn?.optString("name", "")?.takeIf { it.isNotEmpty() },
+                    argumentsFragment = fn?.optString("arguments", "")?.takeIf { it.isNotEmpty() }
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 }
