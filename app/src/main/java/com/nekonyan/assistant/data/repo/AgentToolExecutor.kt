@@ -166,9 +166,10 @@ class AgentToolExecutor(
             ?: return ToolResult(call.id, call.name, "解码图片失败：$path", false)
         return try {
             ensureDetector()
-            val dets = NcnnDetector.detect(bmp)
+            val confVal = a.optDouble("conf", 0.3).toFloat().coerceIn(0.05f, 0.95f)
+            val dets = NcnnDetector.detect(bmp, conf = confVal)
             if (dets.isEmpty()) {
-                ToolResult(call.id, call.name, "未检出目标（阈值 0.3；图 ${bmp.width}x${bmp.height}）", true)
+                ToolResult(call.id, call.name, "未检出目标（阈值 $confVal；图 ${bmp.width}x${bmp.height}）", true)
             } else {
                 val sb = StringBuilder("检出 ${dets.size} 个目标：\n")
                 dets.take(15).forEach { d ->
