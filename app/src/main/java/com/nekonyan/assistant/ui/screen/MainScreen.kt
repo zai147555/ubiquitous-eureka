@@ -317,6 +317,8 @@ private fun ErrorBanner(text: String, onDismiss: () -> Unit) {
             }
         }
     }
+}
+
 /** 需求：底部为「输入框、发送、导入文件、照片」四件套 */
 @Composable
 private fun ChatInputBar(
