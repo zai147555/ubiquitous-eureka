@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.nekonyan.assistant.core.log.NekoLog
+import com.nekonyan.assistant.data.repo.VoiceSettings
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,18 +14,26 @@ import java.io.File
 import java.util.Locale
 
 /**
- * 「说话」链路：文字 → TTS 合成 WAV → （可选）RVC 变声 → 播放。
+ * 「说话」链路，两档回退：
  *
- * 三处刻意的设计：
- *   ① **RVC 是可选的一跳**：没配 RVC 地址时直接播 TTS 原声 —— 功能立刻可用，
- *      配好之后再"升级"成目标音色。不会因为外部服务没起就整个功能不可用；
- *   ② **TTS 合成落文件**（`synthesizeToFile`）而不是直接 speak：因为要拿到 WAV 字节送给 RVC；
- *   ③ **拿不到中文 TTS 引擎要说人话**，而不是静默无声（安卓的 TTS 引擎是可选组件）。
+ *   ① **微软官方 Edge TTS**（端上直连公共服务，零部署）→ MP3 → 直接播；
+ *   ② 失败则回退**系统 TTS** → WAV →（可选）RVC 变声 → 播。
+ *
+ * 四处刻意的设计：
+ *   ① **官方语音优先**：不需要用户部署服务器、也不需要设备装中文语音包，音质更好；
+ *   ② **RVC 只挂在系统 TTS 这一档**：RVC 要 WAV 输入，而官方语音给的是 MP3，
+ *      端上转格式要额外依赖 ffmpeg —— 所以官方语音生效时不做变声（如实写在返回文案里）；
+ *   ③ **合成落文件而不是直接 speak**：要把字节交给播放器（以及 RVC）；
+ *   ④ **两条路都失败时说人话**：带上官方服务的失败原因与"设备缺中文语音包"这类具体原因，
+ *      而不是静默无声。
  */
 class VoicePipeline(private val context: Context) {
 
     private var tts: TextToSpeech? = null
     private var player: MediaPlayer? = null
+
+    /** 官方 Edge TTS 客户端（无状态，可复用：每次合成都新建一条 WebSocket） */
+    private val edge = EdgeTtsClient()
 
     @Volatile var ready: Boolean = false
         private set
@@ -53,11 +62,35 @@ class VoicePipeline(private val context: Context) {
      * @param rvc 配好则走变声，null 则播 TTS 原声
      * @return 人话结果（界面直接显示）
      */
-    suspend fun speak(text: String, rvc: RvcClient?): String {
-        val engine = tts ?: return "TTS 未初始化"
-        if (!ready) return "设备没有可用的语音引擎（设置 → 无障碍/语言 里装一个 TTS）"
+    suspend fun speak(text: String, settings: VoiceSettings): String {
         val clean = text.trim()
         if (clean.isEmpty()) return "没有可朗读的内容"
+
+        // ---- 第一档：微软官方语音（端上直连） ----
+        var edgeFailure: String? = null
+        if (settings.edgeEnabled) {
+            when (val r = withContext(Dispatchers.IO) {
+                edge.synthesize(clean, settings.edgeVoice, settings.edgeRate, settings.edgePitch)
+            }) {
+                is EdgeTtsClient.Result.Ok -> {
+                    play(r.mp3, "mp3")
+                    val short = settings.edgeVoice.substringAfterLast('-').removeSuffix("Neural")
+                    return "已用微软官方语音播放（$short，首帧 ${r.firstByteMs}ms）"
+                }
+                is EdgeTtsClient.Result.Err -> {
+                    edgeFailure = r.message
+                    NekoLog.warn(NekoLog.MODULE_AI, "edge_tts_failed", r.message)
+                }
+            }
+        }
+
+        // ---- 第二档：系统 TTS（可选 RVC） ----
+        val engine = tts
+        if (engine == null || !ready) {
+            return edgeFailure?.let { "官方语音失败（$it），设备也没有可用的语音引擎（设置 → 无障碍/语言 里装一个 TTS）" }
+                ?: "设备没有可用的语音引擎（设置 → 无障碍/语言 里装一个 TTS）"
+        }
+        val rvc = settings.rvcUrl.takeIf { it.isNotBlank() }?.let { RvcClient(it) }
 
         val out = File(context.cacheDir, "tts_${System.currentTimeMillis()}.wav")
         val done = CompletableDeferred<Boolean>()
@@ -79,15 +112,18 @@ class VoicePipeline(private val context: Context) {
         val audio: ByteArray = withContext(Dispatchers.IO) { out.readBytes() }
         val converted = rvc?.let { withContext(Dispatchers.IO) { it.convert(audio) } }
         val toPlay = converted ?: audio
-        val label = if (converted != null) "已用 RVC 变声后播放" else if (rvc != null) "RVC 转换失败，播放 TTS 原声" else "已播放 TTS 原声"
-        play(toPlay)
+        val label = if (converted != null) "已用 RVC 变声后播放"
+                    else if (rvc != null) "RVC 转换失败，播放系统 TTS 原声"
+                    else if (edgeFailure != null) "官方语音失败（$edgeFailure），已回退系统 TTS"
+                    else "已播放系统 TTS 原声"
+        play(toPlay, "wav")
         out.delete()
         return label
     }
 
-    /** 播放 WAV 字节（用缓存文件喂 MediaPlayer） */
-    private suspend fun play(bytes: ByteArray) {
-        val f = File(context.cacheDir, "play_${System.currentTimeMillis()}.wav")
+    /** 播放音频字节（用缓存文件喂 MediaPlayer；扩展名要与真实格式一致） */
+    private suspend fun play(bytes: ByteArray, ext: String) {
+        val f = File(context.cacheDir, "play_${System.currentTimeMillis()}.$ext")
         withContext(Dispatchers.IO) { f.writeBytes(bytes) }
         withContext(Dispatchers.Main) {
             runCatching {

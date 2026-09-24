@@ -14,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekonyan.assistant.NekoApp
-import com.nekonyan.assistant.core.voice.RvcClient
 import com.nekonyan.assistant.core.voice.VoicePipeline
 import com.nekonyan.assistant.data.repo.VoiceSettingsStore
 import com.nekonyan.assistant.core.perm.PermissionGuideStore
@@ -106,10 +105,10 @@ fun NekoAppRoot() {
                         onDismissError = { chatVm.clearError() },
                         onAttachment = { uri, isImage -> chatVm.importAttachment(uri, isImage) },
                         onSpeak = { text ->
-        voiceScope.launch {
-            val url = voiceStore.rvcUrl()
-            voice.speak(text, if (url.isBlank()) null else RvcClient(url))
-        }
+                            voiceScope.launch {
+                                // 官方语音优先、系统 TTS 兜底：两档都在 speak 内部按 settings 决定
+                                voice.speak(text, voiceStore.load())
+                            }
                         },
                         sessions = chatState.sessions,
                         currentSessionId = chatState.currentSessionId,

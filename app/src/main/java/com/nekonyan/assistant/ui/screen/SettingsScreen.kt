@@ -25,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -170,6 +171,47 @@ fun SettingsScreen(
                     checked = appearance.colorBlindFriendly,
                     onCheckedChange = { themeVm.setColorBlindFriendly(it) }
                 )
+            }
+
+            // ---------------- 语音朗读 ----------------
+            GroupTitle("语音朗读")
+            SettingBlock("朗读音色") {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                val store = remember { com.nekonyan.assistant.data.repo.VoiceSettingsStore(ctx) }
+                var voiceSettings by remember { mutableStateOf(store.load()) }
+                var showVoiceDialog by remember { mutableStateOf(false) }
+                SwitchRow(
+                    title = "用微软官方语音（免部署，推荐）",
+                    checked = voiceSettings.edgeEnabled,
+                    onCheckedChange = { on ->
+                        voiceSettings = voiceSettings.copy(edgeEnabled = on)
+                        store.saveEdge(on, voiceSettings.edgeVoice, voiceSettings.edgeRate, voiceSettings.edgePitch)
+                    }
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Text(
+                        "当前音色：" + (com.nekonyan.assistant.core.voice.EdgeTtsClient.FALLBACK_VOICES
+                            .firstOrNull { it.shortName == voiceSettings.edgeVoice }?.friendlyName
+                            ?: voiceSettings.edgeVoice) + "（语速 ${voiceSettings.edgeRate}）",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { showVoiceDialog = true }) { Text("选择 / 试听") }
+                }
+                if (showVoiceDialog) {
+                    com.nekonyan.assistant.ui.component.VoiceSettingsDialog(
+                        initial = voiceSettings,
+                        onDismiss = { showVoiceDialog = false },
+                        onSave = { s ->
+                            voiceSettings = s
+                            store.saveEdge(s.edgeEnabled, s.edgeVoice, s.edgeRate, s.edgePitch)
+                            showVoiceDialog = false
+                        }
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))

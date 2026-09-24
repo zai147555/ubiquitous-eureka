@@ -13,8 +13,8 @@ android {
         applicationId = "com.nekonyan.assistant"
         minSdk = 31            // 需求：Android 12+（API 31+）
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.20.0"
+        versionCode = 24
+        versionName = "0.21.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared") } }
