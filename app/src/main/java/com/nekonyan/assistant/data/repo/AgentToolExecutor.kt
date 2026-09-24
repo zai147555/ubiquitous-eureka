@@ -7,6 +7,8 @@ import com.nekonyan.assistant.core.agent.ToolCall
 import com.nekonyan.assistant.core.agent.ToolRegistry
 import com.nekonyan.assistant.core.agent.ToolResult
 import com.nekonyan.assistant.core.log.NekoLog
+import com.nekonyan.assistant.data.db.AIKnowledgeDao
+import com.nekonyan.assistant.data.db.KnowledgeDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -19,22 +21,27 @@ import java.util.Locale
  *
  * 三道门**按顺序**过，任一不过就返回一条说明给模型（而不是抛异常）：
  *   ① [ToolRegistry.validate]：未知工具 / 禁用名单（输入注入类）/ 空参数；
- *   ② 动作类确认：`ACT` 类工具在用户点头前不执行（[confirmed] 里没有就拒绝）；
+ *   ② 动作类确认：`ACT` 类工具在用户点头前不执行；
  *   ③ 具体实现。
  *
- * 本轮**只接了两个**：
- *   · `now` —— 纯本地，无需任何权限与网络（也是验证整条 Agent 链路最安全的那个工具）；
- *   · 其余工具如实返回"尚未接入执行"，**不假装成功**——假成功会让模型基于幻觉继续推理，
- *     比直接失败难查得多。
+ * 已接通：`now`（纯本地）、`kb_search`（读 Room）。
+ * 其余四个如实返回「尚未接入执行」——**假成功比失败更难查**：模型会拿空结果继续推理，
+ * 最后给出看似合理却毫无依据的答案。
+ *
+ * `kb_search` 的一个关键点：检索用的是 DAO 的 `itemsForAI()`，
+ * 也就是**用户在知识库里关掉 AI 访问的分类，AI 根本读不到** ——
+ * 这条需求是在数据层强制的，不依赖提示词里"请不要看"这种君子协定。
  */
 class AgentToolExecutor(
     private val context: Context,
+    private val knowledgeDao: KnowledgeDao,
+    private val aiKnowledgeDao: AIKnowledgeDao,
     /** 用户已确认可执行的动作类工具名（由界面授权后传入） */
     private val confirmedTools: Set<String> = emptySet()
 ) {
 
     suspend fun execute(call: ToolCall): ToolResult = withContext(Dispatchers.IO) {
-        // 门①：注册表校验（含禁用名单，优先于"是否存在"）
+        // 门①：注册表校验（禁用名单优先于"是否存在"）
         ToolRegistry.validate(call)?.let { reason ->
             NekoLog.warn(NekoLog.MODULE_AI, "tool_rejected", "${ToolRegistry.describe(call)} → $reason")
             return@withContext ToolResult(call.id, call.name, reason, false)
@@ -43,7 +50,6 @@ class AgentToolExecutor(
         if (AgentPolicy.isForbidden(call.name)) {
             return@withContext ToolResult(call.id, call.name, "该工具被策略禁止", false)
         }
-
         // 门②：动作类必须已确认
         if (tool.kind == ActionKind.ACT && call.name !in confirmedTools) {
             return@withContext ToolResult(
@@ -52,7 +58,6 @@ class AgentToolExecutor(
                 false
             )
         }
-
         // 门③：执行
         val started = System.currentTimeMillis()
         val result = runCatching { dispatch(call) }.getOrElse {
@@ -60,21 +65,25 @@ class AgentToolExecutor(
         }
         NekoLog.info(
             NekoLog.MODULE_AI, "tool_executed",
-            "${ToolRegistry.describe(call)} → ${if (result.ok) "成功" else "失败"} 用时 ${System.currentTimeMillis() - started}ms"
+            "${ToolRegistry.describe(call)} → ${if (result.ok) "成功" else "失败"} " +
+                "用时 ${System.currentTimeMillis() - started}ms"
         )
         result
     }
 
-    private fun dispatch(call: ToolCall): ToolResult = when (call.name) {
+    private suspend fun dispatch(call: ToolCall): ToolResult = when (call.name) {
         "now" -> ToolResult(call.id, call.name, nowText(), true)
+        "kb_search" -> kbSearch(call)
         else -> ToolResult(
             call.id, call.name,
-            "工具「${call.name}」尚未接入执行（当前只接通了 now）。请改用你已有的信息回答，或告诉用户这个能力还没做好。",
+            "工具「${call.name}」尚未接入执行（当前接通了 now 与 kb_search）。" +
+                "请改用你已有的信息回答，或如实告诉用户这个能力还没做好。",
             false
         )
     }
 
-    /** 时间：日期 + 时分 + 星期（模型自己没有时钟，很多"今天/现在"类问题要靠它） */
+    // ---------------- now ----------------
+
     private fun nowText(): String {
         val now = Date()
         val date = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(now)
@@ -84,7 +93,54 @@ class AgentToolExecutor(
         return "现在时间：$date $time（$week，时区 $tz）"
     }
 
-    /** 参数解析（org.json）：坏 JSON 不抛异常，交给调用方当"缺参数"处理 */
+    // ---------------- kb_search ----------------
+
+    /**
+     * 检索两处：用户知识库（仅 AI 已开启访问的分类）+ AI 知识库。
+     * 关键词为空时返回用法提示，而不是把整库倒给模型（那会瞬间吃满上下文）。
+     */
+    private suspend fun kbSearch(call: ToolCall): ToolResult {
+        val a = args(call)
+        val q = a.optString("q", "").trim()
+        val limit = a.optInt("limit", 5).coerceIn(1, 20)
+        if (q.isEmpty()) {
+            return ToolResult(call.id, call.name, "缺少检索关键词 q", false)
+        }
+
+        val userHits = runCatching {
+            knowledgeDao.itemsForAI()
+                .filter { it.type == "text" && it.textContent.contains(q, ignoreCase = true) }
+                .take(limit)
+        }.getOrElse {
+            NekoLog.warn(NekoLog.MODULE_AI, "kb_search_failed", it.javaClass.simpleName)
+            return ToolResult(call.id, call.name, "读取知识库失败：${it.javaClass.simpleName}", false)
+        }
+
+        val aiHits = runCatching {
+            aiKnowledgeDao.allItems()
+                .filter { it.title.contains(q, ignoreCase = true) || it.summary.contains(q, ignoreCase = true) }
+                .take(limit)
+        }.getOrDefault(emptyList())
+
+        if (userHits.isEmpty() && aiHits.isEmpty()) {
+            return ToolResult(
+                call.id, call.name,
+                "知识库里没有匹配「$q」的内容（只检索了已开启 AI 访问的分类）", true
+            )
+        }
+        val sb = StringBuilder("知识库检索「$q」：\n")
+        userHits.forEachIndexed { i, item ->
+            sb.append("${i + 1}. ").append(item.textContent.take(200)).append('\n')
+        }
+        aiHits.forEachIndexed { i, item ->
+            sb.append("AI-${i + 1}. ").append(item.title)
+            if (item.summary.isNotBlank()) sb.append("：").append(item.summary.take(200))
+            sb.append('\n')
+        }
+        return ToolResult(call.id, call.name, sb.toString().trim(), true)
+    }
+
+    /** 参数解析（org.json）：坏 JSON 不抛异常，按"没给参数"处理 */
     private fun args(call: ToolCall): JSONObject =
         runCatching { JSONObject(call.argumentsJson) }.getOrElse { JSONObject() }
 }
