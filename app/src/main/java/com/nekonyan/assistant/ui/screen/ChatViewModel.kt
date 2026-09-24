@@ -21,6 +21,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,7 +37,10 @@ data class ChatUiState(
     val streaming: Boolean = false,
     val error: String? = null,
     /** 还没配好 Key/地址：界面据此提示去配置页 */
-    val needConfig: Boolean = false
+    val needConfig: Boolean = false,
+    /** 全部会话（右上角 ＋ 的管理面板用） */
+    val sessions: List<com.nekonyan.assistant.data.db.ConversationSession> = emptyList(),
+    val currentSessionId: String? = null
 )
 
 /**
@@ -59,26 +64,64 @@ class ChatViewModel(
 
     private val currentCall = AtomicReference<Call?>(null)
     private var streamJob: Job? = null
-    private var sessionId: String? = null
+    private val _sessionId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     private var mode: NekoMode = NekoMode.Default
 
     init {
         viewModelScope.launch {
             val sid = repo.ensureSession(mode.key)
-            sessionId = sid
-            _state.update { it.copy(needConfig = !repo.hasApiKey()) }
-            repo.observeMessages(sid).collect { rows ->
+            _sessionId.value = sid
+            _state.update { it.copy(needConfig = !repo.hasApiKey(), currentSessionId = sid) }
+        }
+        // 会话列表（管理面板）
+        viewModelScope.launch {
+            repo.observeSessions().collect { list -> _state.update { it.copy(sessions = list) } }
+        }
+        // 消息跟随"当前会话"切换：flatMapLatest 会在换会话时自动退订旧的
+        viewModelScope.launch {
+            _sessionId.filterNotNull().flatMapLatest { repo.observeMessages(it) }.collect { rows ->
                 _state.update { s ->
                     s.copy(messages = rows.map { r ->
                         ChatMessage(
-                            id = r.id,
-                            text = r.content,
-                            fromUser = r.role == Message.ROLE_USER,
-                            timestamp = r.createdAt
+                            id = r.id, text = r.content,
+                            fromUser = r.role == Message.ROLE_USER, timestamp = r.createdAt
                         )
                     })
                 }
             }
+        }
+    }
+
+    /** 当前会话 id（没有就建一个） */
+    private suspend fun currentSession(): String =
+        _sessionId.value ?: repo.ensureSession(mode.key).also {
+            _sessionId.value = it
+            _state.update { st -> st.copy(currentSessionId = it) }
+        }
+
+    /** 需求：右上角 ＋ 新建对话 */
+    fun newConversation() = viewModelScope.launch {
+        val sid = repo.createSession(mode.key)
+        _sessionId.value = sid
+        _state.update {
+            it.copy(messages = emptyList(), streamingText = "", error = null, currentSessionId = sid)
+        }
+    }
+
+    fun switchConversation(id: String) {
+        if (id == _sessionId.value) return
+        _sessionId.value = id
+        _state.update { it.copy(messages = emptyList(), streamingText = "", error = null, currentSessionId = id) }
+    }
+
+    fun renameConversation(id: String, title: String) = viewModelScope.launch { repo.renameSession(id, title) }
+
+    fun deleteConversation(id: String) = viewModelScope.launch {
+        repo.deleteSession(id)
+        if (_sessionId.value == id) {
+            val next = repo.latestSessionId() ?: repo.createSession(mode.key)
+            _sessionId.value = next
+            _state.update { it.copy(messages = emptyList(), currentSessionId = next) }
         }
     }
 
@@ -101,7 +144,7 @@ class ChatViewModel(
         if (problem != null) {
             // 用户消息照样落库：不能让"打了字发出去却什么都没留下"
             viewModelScope.launch {
-                val sid = sessionId ?: repo.ensureSession(mode.key).also { sessionId = it }
+                val sid = currentSession()
                 repo.appendMessage(sid, Message.ROLE_USER, trimmed)
                 repo.renameSessionIfNeeded(sid, trimmed)
             }
@@ -111,7 +154,7 @@ class ChatViewModel(
         }
 
         streamJob = viewModelScope.launch {
-            val sid = sessionId ?: repo.ensureSession(mode.key).also { sessionId = it }
+            val sid = currentSession()
             repo.appendMessage(sid, Message.ROLE_USER, trimmed)
             repo.renameSessionIfNeeded(sid, trimmed)
             _state.update { it.copy(streaming = true, streamingText = "", error = null) }
@@ -207,7 +250,7 @@ class ChatViewModel(
                 NekoLog.warn(NekoLog.MODULE_STORE, "chat_import_failed", name)
                 "❌ 导入失败：$name"
             }
-            val sid = sessionId ?: repo.ensureSession(mode.key).also { sessionId = it }
+            val sid = currentSession()
             repo.appendMessage(sid, Message.ROLE_USER, text)
         }
     }

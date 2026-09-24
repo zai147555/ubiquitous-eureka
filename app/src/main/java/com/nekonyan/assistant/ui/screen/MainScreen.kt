@@ -64,6 +64,11 @@ import com.nekonyan.assistant.ui.theme.NekoTheme
 import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 
 /**
  * 主界面（需求原文）：
@@ -89,6 +94,13 @@ fun MainScreen(
     onDismissError: () -> Unit = {},
     /** 导入文件/照片：参数为 (uri, 是否图片) */
     onAttachment: (android.net.Uri, Boolean) -> Unit = { _, _ -> },
+    /** 右上角 ＋：新建对话 / 管理对话 */
+    sessions: List<com.nekonyan.assistant.data.db.ConversationSession> = emptyList(),
+    currentSessionId: String? = null,
+    onNewConversation: () -> Unit = {},
+    onSwitchSession: (String) -> Unit = {},
+    onRenameSession: (String, String) -> Unit = { _, _ -> },
+    onDeleteSession: (String) -> Unit = {},
     /** 从设置等功能页退出时置 true：回到聊天页的同时展开侧边栏 */
     startWithDrawerOpen: Boolean = false,
     onDrawerOpened: () -> Unit = {}
@@ -97,6 +109,8 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
+    var showSessions by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<com.nekonyan.assistant.data.db.ConversationSession?>(null) }
 
     // 需求：底部「导入文件」「照片」必须真的能导入（此前是空回调，点了没反应）
     val photoPicker = rememberLauncherForActivityResult(
@@ -144,6 +158,13 @@ fun MainScreen(
                     title = { },   // 需求：顶部无聊天名
                     navigationIcon = { },  // 需求：顶部无返回键
                     actions = {
+                        // 需求：右上角 ＋ 新建对话；长按/点开可管理（切换、改名、删除）
+                        IconButton(onClick = onNewConversation) {
+                            Icon(Icons.Filled.Add, contentDescription = "新建对话")
+                        }
+                        IconButton(onClick = { showSessions = true }) {
+                            Icon(Icons.Filled.List, contentDescription = "对话管理")
+                        }
                         // 需求：右上三条杠展开侧边菜单
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Filled.Menu, contentDescription = "侧边菜单")
@@ -262,6 +283,39 @@ private fun ErrorBanner(text: String, onDismiss: () -> Unit) {
                 Icon(Icons.Filled.Close, contentDescription = "关闭提示")
             }
         }
+    }
+    if (showSessions) {
+        SessionManagerDialog(
+            sessions = sessions,
+            currentId = currentSessionId,
+            onSwitch = onSwitchSession,
+            onRename = { renaming = it },
+            onDelete = onDeleteSession,
+            onDismiss = { showSessions = false }
+        )
+    }
+
+    renaming?.let { target ->
+        var text by remember { mutableStateOf(target.title) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("重命名对话") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("对话名称") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRenameSession(target.id, text)
+                    renaming = null
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("取消") } }
+        )
     }
 }
 
@@ -419,4 +473,42 @@ enum class NekoRoute(val label: String) {
     CONFIG("配置"),
     SETTINGS("设置"),
     LOGS("全部日志")
+}
+
+/** 对话管理面板：切换 / 改名 / 删除（需求：可管理、可改名称） */
+@Composable
+private fun SessionManagerDialog(
+    sessions: List<com.nekonyan.assistant.data.db.ConversationSession>,
+    currentId: String?,
+    onSwitch: (String) -> Unit,
+    onRename: (com.nekonyan.assistant.data.db.ConversationSession) -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("对话管理（${sessions.size}）") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (sessions.isEmpty()) Text("还没有对话", style = MaterialTheme.typography.bodySmall)
+                sessions.forEach { s ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            (if (s.id == currentId) "● " else "") + s.title.ifBlank { "新会话" },
+                            Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1
+                        )
+                        TextButton(onClick = { onSwitch(s.id); onDismiss() }) { Text("切换") }
+                        TextButton(onClick = { onRename(s) }) { Text("改名") }
+                        TextButton(onClick = { onDelete(s.id) }) { Text("删除") }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
 }

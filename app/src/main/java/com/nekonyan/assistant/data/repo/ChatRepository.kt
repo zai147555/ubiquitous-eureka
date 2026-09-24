@@ -1,6 +1,7 @@
 package com.nekonyan.assistant.data.repo
 
 import com.nekonyan.assistant.core.chat.ChatConfig
+import com.nekonyan.assistant.core.log.NekoLog
 import com.nekonyan.assistant.core.chat.PromptComposer
 import com.nekonyan.assistant.core.chat.PromptMessage
 import com.nekonyan.assistant.core.net.ChatOutcome
@@ -42,6 +43,32 @@ class ChatRepository(
     fun clearApiKey() = configStore.clearApiKey()
 
     // ---------------- 会话与消息 ----------------
+
+    /** 新建一个空会话（右上角 ＋） */
+    suspend fun createSession(mode: String): String {
+        val id = UUID.randomUUID().toString()
+        dao.upsertSession(ConversationSession(id = id, title = NEW_SESSION_TITLE, mode = mode))
+        NekoLog.info(NekoLog.MODULE_UI, "chat_session_create", id.take(8))
+        return id
+    }
+
+    /** 改名（空标题回退"新会话"，不允许出现没有名字的会话） */
+    suspend fun renameSession(sessionId: String, title: String) {
+        val session = dao.sessionById(sessionId) ?: return
+        val t = title.trim().ifEmpty { NEW_SESSION_TITLE }
+        dao.upsertSession(session.copy(title = t, updatedAt = System.currentTimeMillis()))
+        NekoLog.info(NekoLog.MODULE_UI, "chat_session_rename", t)
+    }
+
+    /** 删除会话（消息随外键 CASCADE 一起删） */
+    suspend fun deleteSession(sessionId: String) {
+        dao.sessionById(sessionId)?.let {
+            dao.deleteSession(it)
+            NekoLog.info(NekoLog.MODULE_UI, "chat_session_delete", it.title)
+        }
+    }
+
+    suspend fun latestSessionId(): String? = dao.latestSession()
 
     /** 没有会话就建一个（首启第一次进入聊天页时走这里） */
     suspend fun ensureSession(mode: String): String {

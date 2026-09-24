@@ -90,6 +90,12 @@ fun NekoAppRoot() {
                         errorText = chatState.error,
                         onDismissError = { chatVm.clearError() },
                         onAttachment = { uri, isImage -> chatVm.importAttachment(uri, isImage) },
+                        sessions = chatState.sessions,
+                        currentSessionId = chatState.currentSessionId,
+                        onNewConversation = { chatVm.newConversation() },
+                        onSwitchSession = { chatVm.switchConversation(it) },
+                        onRenameSession = { id, title -> chatVm.renameConversation(id, title) },
+                        onDeleteSession = { chatVm.deleteConversation(it) },
                         startWithDrawerOpen = backToDrawer,
                         onDrawerOpened = { backToDrawer = false }
                     )
