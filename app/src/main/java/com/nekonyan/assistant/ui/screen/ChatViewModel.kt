@@ -16,6 +16,7 @@ import com.nekonyan.assistant.data.db.NekoDatabase
 import com.nekonyan.assistant.data.repo.ChatConfigStore
 import com.nekonyan.assistant.data.repo.ChatRepository
 import com.nekonyan.assistant.data.repo.PersonaRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import java.util.concurrent.atomic.AtomicReference
 import com.nekonyan.assistant.core.chat.PromptMessage
@@ -44,8 +46,13 @@ data class ChatUiState(
     val toolStatus: String? = null,
     /** 全部会话（右上角 ＋ 的管理面板用） */
     val sessions: List<com.nekonyan.assistant.data.db.ConversationSession> = emptyList(),
-    val currentSessionId: String? = null
+    val currentSessionId: String? = null,
+    /** 动作类工具（如播放音乐）正等用户点头：界面据此弹确认框 */
+    val pendingConfirm: PendingActConfirm? = null
 )
+
+/** 动作类工具的用户确认请求（summary 是给用户看的一句话，不含内部工具名） */
+data class PendingActConfirm(val toolName: String, val summary: String)
 
 /**
  * 聊天页 ViewModel。
@@ -259,6 +266,10 @@ class ChatViewModel(
      * 拿到 Call 就 cancel 掉它 —— 请求会以 Cancelled 收场，已收到的内容照样落库。
      */
     fun stop() {
+        // 有确认框挂着时先按"拒绝"放掉，否则工具层还在等一个永远不会来的答复
+        confirmWaiter?.complete(false)
+        confirmWaiter = null
+        _state.update { it.copy(pendingConfirm = null) }
         val call = currentCall.getAndSet(null)
         if (call != null) {
             call.cancel()
@@ -304,6 +315,34 @@ class ChatViewModel(
         }
     }
 
+    /** 动作类工具的用户确认：界面点允许/拒绝后 complete */
+    private var confirmWaiter: CompletableDeferred<Boolean>? = null
+
+    /** 界面调用：允许/拒绝当前挂起的动作类工具 */
+    fun answerConfirm(allow: Boolean) {
+        confirmWaiter?.complete(allow)
+        confirmWaiter = null
+        _state.update { it.copy(pendingConfirm = null) }
+    }
+
+    /**
+     * 工具层调用：弹确认框并等用户点头。
+     *
+     * 超时（[CONFIRM_TIMEOUT_MS]）或界面被销毁都按**拒绝**处理 ——
+     * 不能让一次没被看见的确认框变成"默认同意"。
+     */
+    private suspend fun askActConfirm(toolName: String, summary: String): Boolean {
+        val waiter = CompletableDeferred<Boolean>()
+        confirmWaiter = waiter
+        _state.update { it.copy(pendingConfirm = PendingActConfirm(toolName, summary)) }
+        return try {
+            withTimeoutOrNull(CONFIRM_TIMEOUT_MS) { waiter.await() } ?: false
+        } finally {
+            if (confirmWaiter === waiter) confirmWaiter = null
+            _state.update { it.copy(pendingConfirm = null) }
+        }
+    }
+
     /** 工具名 → 给用户看的动作描述（不要直接显示 kb_search 这种内部名） */
     private fun toolLabel(name: String): String = when (name) {
         "kb_search" -> "正在查知识库…"
@@ -323,6 +362,9 @@ class ChatViewModel(
     }
 
     companion object {
+        /** 等用户确认动作类工具的上限：超时按**拒绝**处理（绝不默认同意） */
+        const val CONFIRM_TIMEOUT_MS = 60_000L
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val db = NekoDatabase.get(NekoApp.get())
@@ -337,7 +379,9 @@ class ChatViewModel(
                         knowledgeDao = db.knowledgeDao(),
                         aiKnowledgeDao = db.aiKnowledgeDao(),
                         // 让工具用「用户当前选中的模型」，和 yolo.ds 页保持一致
-                        yoloModelDao = db.yoloModelDao()
+                        yoloModelDao = db.yoloModelDao(),
+                        // 动作类工具必须用户点头：这里把确认框接到聊天界面上
+                        confirmAct = { name, summary -> askActConfirm(name, summary) }
                     )
                 )
             }

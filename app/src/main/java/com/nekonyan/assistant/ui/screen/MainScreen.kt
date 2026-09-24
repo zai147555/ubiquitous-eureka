@@ -106,6 +106,9 @@ fun MainScreen(
     onDeleteSession: (String) -> Unit = {},
     /** 从设置等功能页退出时置 true：回到聊天页的同时展开侧边栏 */
     startWithDrawerOpen: Boolean = false,
+    /** 动作类工具（如"播放《X》"）正等用户点头：非空则弹确认框 */
+    pendingConfirm: PendingActConfirm? = null,
+    onAnswerConfirm: (Boolean) -> Unit = {},
     onDrawerOpened: () -> Unit = {}
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -268,6 +271,22 @@ fun MainScreen(
             }
         }
     }
+    // 动作类工具（会改动外界，如播放音乐）必须用户点头：猫娘先说清要干什么，再等允许。
+    // 界面被划走/等待超时都按拒绝处理 —— 没被看见的确认框绝不能变成"默认同意"。
+    pendingConfirm?.let { pc ->
+        AlertDialog(
+            onDismissRequest = { onAnswerConfirm(false) },
+            title = { Text("需要你确认") },
+            text = { Text("猫娘想${pc.summary}，允许吗？") },
+            confirmButton = {
+                TextButton(onClick = { onAnswerConfirm(true) }) { Text("允许") }
+            },
+            dismissButton = {
+                TextButton(onClick = { onAnswerConfirm(false) }) { Text("拒绝") }
+            }
+        )
+    }
+
     if (showSessions) {
         SessionManagerDialog(
             sessions = sessions,

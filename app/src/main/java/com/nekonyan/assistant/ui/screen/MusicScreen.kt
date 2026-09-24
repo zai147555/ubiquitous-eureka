@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -44,8 +45,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
 import com.nekonyan.assistant.data.repo.MusicRepository
 import kotlinx.coroutines.launch
 import java.io.File
@@ -68,12 +67,12 @@ fun MusicScreen(onBack: () -> Unit) {
 
     var tracks by remember { mutableStateOf<List<MusicRepository.Track>>(emptyList()) }
     var scanning by remember { mutableStateOf(false) }
-    var playingPath by remember { mutableStateOf<String?>(null) }
+    // 播放状态来自共享播放器：agent 让它放歌，这个页面也会立刻反映出来
+    val playingPath by com.nekonyan.assistant.core.music.MusicPlayer.current.collectAsState()
     var message by remember { mutableStateOf<String?>(null) }
 
-    val player = remember { ExoPlayer.Builder(ctx).build() }
-    // 离开页面必须释放播放器，否则解码器与音频焦点会一直挂着
-    DisposableEffect(Unit) { onDispose { player.release() } }
+    // 播放器由 MusicPlayer 单例持有，**这里刻意不 release**：
+    // 共享实例一旦随页面销毁释放，用户刚让猫娘放的歌一退出页面就断了。
 
     fun rescan() {
         scope.launch {
@@ -87,14 +86,8 @@ fun MusicScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) { rescan() }
 
     fun play(track: MusicRepository.Track) {
-        if (playingPath == track.path) {
-            player.pause()
-            playingPath = null
-        } else {
-            player.setMediaItem(MediaItem.fromUri(Uri.fromFile(File(track.path))))
-            player.prepare()
-            player.play()
-            playingPath = track.path
+        scope.launch {
+            com.nekonyan.assistant.core.music.MusicPlayer.toggle(ctx, track.path, track.displayName)
         }
     }
 
@@ -107,10 +100,9 @@ fun MusicScreen(onBack: () -> Unit) {
             else -> (current + delta + tracks.size) % tracks.size
         }
         val target = tracks[next]
-        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(File(target.path))))
-        player.prepare()
-        player.play()
-        playingPath = target.path
+        scope.launch {
+            com.nekonyan.assistant.core.music.MusicPlayer.play(ctx, target.path, target.displayName)
+        }
     }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -215,8 +207,9 @@ fun MusicScreen(onBack: () -> Unit) {
                             onDelete = {
                                 scope.launch {
                                     if (playingPath == t.path) {
-                                        player.stop()
-                                        playingPath = null
+                                        // 必须先停再删（顺序不能反、也不能另起协程）：
+                                        // 否则解码器还抓着已删除的文件
+                                        com.nekonyan.assistant.core.music.MusicPlayer.stop()
                                     }
                                     val ok = repo.delete(t)
                                     message = if (ok) "已删除「${t.displayName}」" else "删除失败：${t.displayName}"

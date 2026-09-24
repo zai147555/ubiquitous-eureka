@@ -46,7 +46,12 @@ class AgentToolExecutor(
     /** 用户已确认可执行的动作类工具名（由界面授权后传入） */
     private val confirmedTools: Set<String> = emptySet(),
     /** 模型表：用来按用户当前选中的模型加载检测器（与 yolo.ds 页保持一致） */
-    private val yoloModelDao: com.nekonyan.assistant.data.db.YoloModelDao? = null
+    private val yoloModelDao: com.nekonyan.assistant.data.db.YoloModelDao? = null,
+    /**
+     * 动作类工具找用户点头：参数 (工具名, 给用户看的一句话)，返回是否允许。
+     * 默认一律拒绝 —— 界面没接确认流程时，宁可什么都不做，也不能替用户同意。
+     */
+    private val confirmAct: suspend (String, String) -> Boolean = { _, _ -> false }
 ) {
 
     private val http: okhttp3.OkHttpClient = com.nekonyan.assistant.core.net.DeepSeekClient.defaultClient()
@@ -65,13 +70,18 @@ class AgentToolExecutor(
         if (AgentPolicy.isForbidden(call.name)) {
             return@withContext ToolResult(call.id, call.name, "该工具被策略禁止", false)
         }
-        // 门②：动作类必须已确认
+        // 门②：动作类必须用户点头（确认框由界面弹，这里只等结果）
         if (tool.kind == ActionKind.ACT && call.name !in confirmedTools) {
-            return@withContext ToolResult(
-                call.id, call.name,
-                "「${call.name}」会改动外界，需要用户确认后才能执行。请先用一句话告诉用户你要做什么，等确认。",
-                false
-            )
+            val summary = actSummary(call)
+            if (!confirmAct(call.name, summary)) {
+                NekoLog.info(NekoLog.MODULE_AI, "act_denied", "${call.name} → $summary")
+                return@withContext ToolResult(
+                    call.id, call.name,
+                    "用户没有同意这次「$summary」。**不要重试**，直接用一句话告诉用户你已取消。",
+                    false
+                )
+            }
+            NekoLog.info(NekoLog.MODULE_AI, "act_allowed", "${call.name} → $summary")
         }
         // 门③：执行
         val started = System.currentTimeMillis()
@@ -92,17 +102,17 @@ class AgentToolExecutor(
         "web_fetch" -> webFetch(call)
         "yolo_detect_local" -> yoloLocal(call)
         "yolo_detect_service" -> yoloService(call)
-        "music_play" -> {
-            val title = args(call).optString("title", "").trim()
-            ToolResult(
-                call.id, call.name,
-                "现在还没法直接播：音乐页的播放器由界面自己持有，工具层拿不到播放句柄。" +
-                    (if (title.isNotEmpty()) "请让用户到「音乐」页搜「$title」手动点播，" else "请让用户到「音乐」页手动点播，") +
-                    "或如实说明这个能力要先做播放服务才能用。",
-                false
-            )
-        }
+        "music_play" -> musicPlay(call)
         else -> ToolResult(call.id, call.name, "未知工具：${call.name}", false)
+    }
+
+    /** 动作类工具给用户看的一句话（确认框上显示的就是它，不要露出内部工具名） */
+    private fun actSummary(call: ToolCall): String = when (call.name) {
+        "music_play" -> {
+            val t = args(call).optString("title", "").trim()
+            if (t.isEmpty()) "播放音乐" else "播放《$t》"
+        }
+        else -> "执行「${call.name}」"
     }
 
     // ---------------- web_fetch ----------------
@@ -166,6 +176,47 @@ class AgentToolExecutor(
         if (!file.isFile) return null to "文件不存在：$path"
         val bmp = android.graphics.BitmapFactory.decodeFile(path)
         return if (bmp == null) null to "解码图片失败：$path" else bmp to null
+    }
+
+    /**
+     * 播放本地音乐（唯一的动作类工具，已过门②的用户确认）。
+     *
+     * 只在**已导入的音乐库**里按歌名/文件名模糊匹配 —— 需求写死了仅播放已下载、
+     * 无在线搜索；匹配不到就如实说，不假装在播。
+     */
+    private suspend fun musicPlay(call: ToolCall): ToolResult {
+        val title = args(call).optString("title", "").trim()
+        if (title.isEmpty()) return ToolResult(call.id, call.name, "需要给出歌名关键词", false)
+
+        val tracks = runCatching { com.nekonyan.assistant.data.repo.MusicRepository(context).scanLocal() }
+            .getOrElse {
+                return ToolResult(call.id, call.name, "读取本地音乐库失败：${it.javaClass.simpleName}", false)
+            }
+        if (tracks.isEmpty()) {
+            return ToolResult(call.id, call.name, "本地音乐库是空的：请让用户先到「音乐」页导入音乐", false)
+        }
+        val lower = title.lowercase()
+        val hits = tracks.filter {
+            it.title.lowercase().contains(lower) ||
+                java.io.File(it.path).name.lowercase().contains(lower)
+        }
+        if (hits.isEmpty()) {
+            val names = tracks.take(8).joinToString("、") { it.displayName }
+            return ToolResult(
+                call.id, call.name,
+                "音乐库里没有匹配「$title」的歌。现有（最多列 8 首）：$names。" +
+                    "请告诉用户没找到，不要编造正在播放。",
+                false
+            )
+        }
+        val track = hits.first()
+        com.nekonyan.assistant.core.music.MusicPlayer.play(context, track.path, track.displayName)
+        val extra = if (hits.size > 1) "（另有 ${hits.size - 1} 首也匹配，先放了这一首）" else ""
+        return ToolResult(
+            call.id, call.name,
+            "已开始播放「${track.displayName}」${if (track.artist != null) " - ${track.artist}" else ""}$extra",
+            true
+        )
     }
 
     /** 本地检测：source=screen 取当前屏幕帧，否则读 path 指定的图片文件 */

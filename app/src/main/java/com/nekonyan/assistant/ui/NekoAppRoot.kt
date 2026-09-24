@@ -117,6 +117,8 @@ fun NekoAppRoot() {
                         onSwitchSession = { chatVm.switchConversation(it) },
                         onRenameSession = { id, title -> chatVm.renameConversation(id, title) },
                         onDeleteSession = { chatVm.deleteConversation(it) },
+                        pendingConfirm = chatState.pendingConfirm,
+                        onAnswerConfirm = { chatVm.answerConfirm(it) },
                         startWithDrawerOpen = backToDrawer,
                         onDrawerOpened = { backToDrawer = false }
                     )
