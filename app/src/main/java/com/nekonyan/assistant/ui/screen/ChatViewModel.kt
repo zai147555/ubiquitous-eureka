@@ -28,6 +28,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import java.util.concurrent.atomic.AtomicReference
+import com.nekonyan.assistant.core.chat.PromptMessage
+import com.nekonyan.assistant.data.repo.AgentToolExecutor
 
 /** 聊天页状态。消息本体以 Room 为准（单一数据源），这里只放"正在进行中"的临时量 */
 data class ChatUiState(
@@ -56,7 +58,9 @@ data class ChatUiState(
  */
 class ChatViewModel(
     private val repo: ChatRepository,
-    private val personas: PersonaRepository
+    private val personas: PersonaRepository,
+    /** Agent 循环的"手脚"：执行模型要求的工具调用 */
+    private val toolExecutor: AgentToolExecutor
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ChatUiState())
@@ -159,48 +163,89 @@ class ChatViewModel(
             repo.renameSessionIfNeeded(sid, trimmed)
             _state.update { it.copy(streaming = true, streamingText = "", error = null) }
 
-            val history = repo.promptHistory(sid)
-            // 当前人格（`修改.ds` 第一项：当前人格用于聊天/悬浮窗/任务）
             val persona = personas.currentPersona()
             val system = PromptComposer.systemPrompt(
                 personaName = persona?.name,
                 personaDescription = persona?.description,
                 modeLabel = mode.label,
-                knowledge = emptyList()      // 知识库注入留到后续里程碑
+                knowledge = emptyList()      // 知识库改由 kb_search 工具按需检索
             )
 
-            val outcome = withContext(Dispatchers.IO) {
-                repo.streamChat(
-                    config = config,
-                    systemPrompt = system,
-                    history = history,
-                    onDelta = { delta ->
-                        _state.update { it.copy(streamingText = it.streamingText + delta) }
-                    },
-                    onCallCreated = { call -> currentCall.set(call) }
-                )
-            }
-            currentCall.set(null)
+            // ---------------- Agent 循环 ----------------
+            // 一轮 = 调模型 → 若有 tool_calls 就执行并回灌 → 再调模型；最多 AgentPolicy.MAX_ROUNDS 轮
+            val history = repo.promptHistory(sid).toMutableList()
+            val prevCalls = mutableListOf<com.nekonyan.assistant.core.agent.ToolCall>()
+            var round = 0
+            var failure: String? = null
+            var cancelled = false
 
+            while (true) {
+                val messages = buildList {
+                    add(PromptMessage.system(system))
+                    addAll(history)
+                }
+                val outcome = withContext(Dispatchers.IO) {
+                    repo.streamWithMessages(
+                        config = config,
+                        messages = messages,
+                        tools = com.nekonyan.assistant.core.agent.ToolRegistry.definitions,
+                        onDelta = { delta ->
+                            _state.update { it.copy(streamingText = it.streamingText + delta) }
+                        },
+                        onCallCreated = { call -> currentCall.set(call) }
+                    )
+                }
+                currentCall.set(null)
+
+                if (outcome is ChatOutcome.Failure) { failure = outcome.message; break }
+                if (outcome is ChatOutcome.Cancelled) { cancelled = true; break }
+                val success = outcome as ChatOutcome.Success
+                if (success.calls.isEmpty()) break      // 没有工具调用 → 这就是最终回答
+
+                val step = com.nekonyan.assistant.core.agent.AgentPolicy.next(
+                    com.nekonyan.assistant.core.agent.AgentReply(success.text, success.calls),
+                    round, prevCalls
+                )
+                if (step !is com.nekonyan.assistant.core.agent.AgentStep.UseTools) {
+                    val why = (step as? com.nekonyan.assistant.core.agent.AgentStep.GiveUp)?.reason
+                    if (why != null) _state.update { it.copy(error = why) }
+                    break
+                }
+                round++
+                // ① 把"模型要调工具"写进历史（arguments 必须是字符串，由 AgentJson 保证）
+                history.add(
+                    PromptMessage.assistantToolCalls(
+                        com.nekonyan.assistant.core.agent.AgentJson.toolCallsArray(step.calls)
+                    )
+                )
+                // ② 逐个执行，把结果按 tool_call_id 回灌
+                step.calls.forEach { call ->
+                    _state.update { it.copy(error = null) }
+                    NekoLog.info(NekoLog.MODULE_AI, "tool_call", "第 ${round} 轮：${call.name}")
+                    val result = toolExecutor.execute(call)
+                    history.add(PromptMessage.toolResult(result.callId, result.content))
+                    prevCalls.add(call)
+                }
+            }
+
+            // ---------------- 收尾 ----------------
+            // streamingText 累积了本次所有轮次的可见文本（模型可能先说"我查一下"再回答）
             val partial = _state.value.streamingText
-            when (outcome) {
-                is ChatOutcome.Success -> {
-                    repo.appendMessage(sid, Message.ROLE_ASSISTANT, outcome.text)
+            when {
+                failure != null -> {
+                    if (partial.isNotBlank()) repo.appendMessage(sid, Message.ROLE_ASSISTANT, partial)
+                    _state.update { it.copy(streaming = false, streamingText = "", error = failure) }
+                    NekoLog.error(NekoLog.MODULE_UI, "chat_failed", failure)
+                }
+                cancelled -> {
+                    if (partial.isNotBlank()) repo.appendMessage(sid, Message.ROLE_ASSISTANT, partial)
                     _state.update { it.copy(streaming = false, streamingText = "") }
                 }
-                is ChatOutcome.Failure -> {
-                    if (partial.isNotBlank()) {
-                        repo.appendMessage(sid, Message.ROLE_ASSISTANT, partial)
-                    }
-                    _state.update { it.copy(streaming = false, streamingText = "", error = outcome.message) }
-                    NekoLog.error(NekoLog.MODULE_UI, "chat_failed", outcome.message)
-                }
-                ChatOutcome.Cancelled -> {
-                    if (partial.isNotBlank()) {
-                        repo.appendMessage(sid, Message.ROLE_ASSISTANT, partial)
-                    }
+                partial.isNotBlank() -> {
+                    repo.appendMessage(sid, Message.ROLE_ASSISTANT, partial)
                     _state.update { it.copy(streaming = false, streamingText = "") }
                 }
+                else -> _state.update { it.copy(streaming = false, streamingText = "") }
             }
         }
     }
@@ -271,7 +316,12 @@ class ChatViewModel(
                         dao = db.conversationDao(),
                         configStore = ChatConfigStore(NekoApp.context())
                     ),
-                    personas = PersonaRepository(db.personaDao(), NekoApp.context())
+                    personas = PersonaRepository(db.personaDao(), NekoApp.context()),
+                    toolExecutor = AgentToolExecutor(
+                        context = NekoApp.context(),
+                        knowledgeDao = db.knowledgeDao(),
+                        aiKnowledgeDao = db.aiKnowledgeDao()
+                    )
                 )
             }
         }

@@ -141,6 +141,27 @@ class ChatRepository(
         )
     }
 
+    /**
+     * 用**完整消息列表**发一次流式请求（Agent 循环用）。
+     *
+     * 与 [streamChat] 的区别：那条会自己用 PromptComposer 组装 system+history，
+     * 而 Agent 循环的历史里包含 role=tool 与带 tool_calls 的 assistant 消息，
+     * 必须原样送出、不能再被裁剪或重组。
+     */
+    fun streamWithMessages(
+        config: ChatConfig,
+        messages: List<PromptMessage>,
+        tools: List<com.nekonyan.assistant.core.agent.AgentTool>,
+        onDelta: (String) -> Unit,
+        onCallCreated: (Call) -> Unit = {}
+    ): ChatOutcome = client.streamChat(
+        config = config,
+        messages = messages,
+        onDelta = onDelta,
+        onCallCreated = onCallCreated,
+        tools = tools
+    )
+
     companion object {
         const val NEW_SESSION_TITLE = "新会话"
     }

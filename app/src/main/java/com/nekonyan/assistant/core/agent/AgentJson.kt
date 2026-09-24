@@ -21,23 +21,24 @@ object AgentJson {
             }
         }
 
+    /** 只产出 tool_calls 数组本身（写进历史时用；消息体构造也复用它） */
+    fun toolCallsArray(calls: List<ToolCall>): String =
+        calls.joinToString(separator = ",", prefix = "[", postfix = "]") { c ->
+            buildString {
+                append("{\"id\":").append(quote(c.id))
+                append(",\"type\":\"function\",\"function\":{")
+                append("\"name\":").append(quote(c.name))
+                append(",\"arguments\":").append(quote(c.argumentsJson))
+                append("}}")
+            }
+        }
+
     fun assistantToolCallMessage(content: String?, calls: List<ToolCall>): String = buildString {
         append("{\"role\":\"assistant\",\"content\":")
         append(if (content.isNullOrEmpty()) "null" else quote(content))
-        append(",\"tool_calls\":[")
-        append(
-            calls.joinToString(",") { c ->
-                buildString {
-                    append("{\"id\":").append(quote(c.id))
-                    append(",\"type\":\"function\",\"function\":{")
-                    append("\"name\":").append(quote(c.name))
-                    // ★ arguments 必须是**字符串**（不是对象），这是 OpenAI 兼容接口的硬要求
-                    append(",\"arguments\":").append(quote(c.argumentsJson))
-                    append("}}")
-                }
-            }
-        )
-        append("]}")
+        append(",\"tool_calls\":")
+        append(toolCallsArray(calls))
+        append('}')
     }
 
     fun toolResultMessage(result: ToolResult): String = buildString {
