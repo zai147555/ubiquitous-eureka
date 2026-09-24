@@ -311,7 +311,11 @@ class YoloModelViewModel(
 
     private fun serviceAct(label: String, block: suspend () -> Pair<String, Boolean>) = viewModelScope.launch {
         _state.update { it.copy(serviceBusy = true, serviceMessage = "$label 中…", serviceOk = false) }
-        val (msg, ok) = runCatching { block() }.getOrElse {
+        // ★ 必须切到 IO：viewModelScope 默认跑在 Main，而这三个动作都是**阻塞式网络请求**，
+        //   留在主线程会直接抛 NetworkOnMainThreadException（用户实测踩到过）
+        val (msg, ok) = runCatching {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { block() }
+        }.getOrElse {
             "❌ $label 失败：${it.message ?: it.javaClass.simpleName}" to false
         }
         _state.update { it.copy(serviceBusy = false, serviceMessage = msg, serviceOk = ok) }

@@ -89,7 +89,7 @@ fun PermissionGuideDialog(
                     "状态：" + when (state) {
                         PermissionState.GRANTED -> "✅ 已授权"
                         PermissionState.DENIED -> "⬜ 未授权"
-                        PermissionState.MANUAL -> "⚙ 需手动开启 / 使用时确认"
+                        PermissionState.MANUAL -> "⚙ 需手动开启（系统不提供查询接口）"
                         PermissionState.NOT_APPLICABLE -> "— 当前系统不需要"
                         null -> "检测中…"
                     },
@@ -98,6 +98,14 @@ fun PermissionGuideDialog(
 
                 Text(progress.summary, style = MaterialTheme.typography.labelSmall)
 
+                if (state == PermissionState.MANUAL) {
+                    Text(
+                        "注意：这是厂商私有开关，安卓没有公开接口能查它的状态 —— " +
+                            "即使你在系统设置里开了，这一步也不会变成 ✅。这是系统限制，不是应用没检测到。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (state != PermissionState.GRANTED && state != PermissionState.NOT_APPLICABLE) {
                     Text(
                         PermissionGuide.degradationHint(item.key),

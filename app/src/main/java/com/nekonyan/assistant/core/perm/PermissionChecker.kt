@@ -68,7 +68,25 @@ object PermissionChecker {
                 } else PermissionState.DENIED
             }
 
-            PermissionGuide.KEY_BACKGROUND_POPUP,
+            PermissionGuide.KEY_BACKGROUND_POPUP -> {
+                // 厂商私有开关：MIUI 等用 AppOps 的 background_start_activity 管控。
+                // 查得到就如实反映；查不到（原生系统 / op 名变更）仍返回 MANUAL —— 不假装能查。
+                val mode = runCatching {
+                    val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+                    @Suppress("DEPRECATION")
+                    appOps.unsafeCheckOpNoThrow(
+                        "android:background_start_activity",
+                        android.os.Process.myUid(), context.packageName
+                    )
+                }.getOrNull()
+                when (mode) {
+                    android.app.AppOpsManager.MODE_ALLOWED -> PermissionState.GRANTED
+                    android.app.AppOpsManager.MODE_ERRORED,
+                    android.app.AppOpsManager.MODE_IGNORED -> PermissionState.DENIED
+                    else -> PermissionState.MANUAL
+                }
+            }
+
             PermissionGuide.KEY_AUTOSTART -> PermissionState.MANUAL
 
             else -> PermissionState.NOT_APPLICABLE
