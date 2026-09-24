@@ -34,7 +34,18 @@ object ChatJson {
 
     fun messagesJson(messages: List<PromptMessage>): String =
         messages.joinToString(separator = ",", prefix = "[", postfix = "]") { m ->
-            "{\"role\":${quoted(m.role)},\"content\":${quoted(m.content)}}"
+            buildString {
+                append("{\"role\":").append(quoted(m.role))
+                append(",\"content\":").append(quoted(m.content))
+                // function calling 的两个可选字段：不影响普通消息的序列化结果
+                m.toolCallsJson?.takeIf { it.isNotBlank() }?.let {
+                    append(",\"tool_calls\":").append(it)
+                }
+                m.toolCallId?.takeIf { it.isNotBlank() }?.let {
+                    append(",\"tool_call_id\":").append(quoted(it))
+                }
+                append('}')
+            }
         }
 
     /** 数字要保持与语言环境无关（逗号小数点在某些地区会让服务端解析失败） */

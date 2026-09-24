@@ -1,15 +1,36 @@
 package com.nekonyan.assistant.core.chat
 
-/** 一条要发给模型的消息（纯 Kotlin，与 Room 的 Message 实体解耦，便于独立测试） */
-data class PromptMessage(val role: String, val content: String) {
+/**
+ * 一条要发给模型的消息（纯 Kotlin，与 Room 的 Message 实体解耦，便于独立测试）。
+ *
+ * function calling 需要两种"特殊消息"，所以多了两个可选字段：
+ *   · assistant 消息可携带 [toolCallsJson]（模型要求调用工具）；
+ *   · role="tool" 的消息必须带 [toolCallId]（把执行结果对应回那次调用）。
+ * 普通对话两者都为 null，序列化结果与旧版**逐字节一致**。
+ */
+data class PromptMessage(
+    val role: String,
+    val content: String,
+    val toolCallsJson: String? = null,
+    val toolCallId: String? = null
+) {
     companion object {
         const val SYSTEM = "system"
         const val USER = "user"
         const val ASSISTANT = "assistant"
+        const val TOOL = "tool"
 
         fun system(text: String) = PromptMessage(SYSTEM, text)
         fun user(text: String) = PromptMessage(USER, text)
         fun assistant(text: String) = PromptMessage(ASSISTANT, text)
+
+        /** 模型要求调用工具的那条 assistant 消息 */
+        fun assistantToolCalls(callsJson: String) =
+            PromptMessage(ASSISTANT, "", toolCallsJson = callsJson)
+
+        /** 工具执行结果（role=tool + tool_call_id） */
+        fun toolResult(callId: String, content: String) =
+            PromptMessage(TOOL, content, toolCallId = callId)
     }
 }
 
