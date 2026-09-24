@@ -25,7 +25,11 @@ import javax.net.ssl.SSLException
  * 否则每次主动中断都要弹一条红色错误。
  */
 sealed interface ChatOutcome {
-    data class Success(val text: String) : ChatOutcome
+    /** [calls] 非空表示这一轮模型要调工具（function calling），此时 text 可能为空 */
+    data class Success(
+        val text: String,
+        val calls: List<com.nekonyan.assistant.core.agent.ToolCall> = emptyList()
+    ) : ChatOutcome
     data class Failure(val message: String, val retryable: Boolean = true) : ChatOutcome
     data object Cancelled : ChatOutcome
 }
@@ -51,7 +55,9 @@ class DeepSeekClient(private val baseClient: OkHttpClient = defaultClient()) {
         messages: List<PromptMessage>,
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit = {},
-        onCallCreated: (Call) -> Unit = {}
+        onCallCreated: (Call) -> Unit = {},
+        /** 非空则带上 tools，开启 function calling（Agent 循环用） */
+        tools: List<com.nekonyan.assistant.core.agent.AgentTool> = emptyList()
     ): ChatOutcome {
         val c = config.normalized()
         c.blockingProblem()?.let { return ChatOutcome.Failure(it, retryable = false) }
@@ -61,7 +67,8 @@ class DeepSeekClient(private val baseClient: OkHttpClient = defaultClient()) {
             model = c.model,
             stream = true,
             temperature = c.temperature,
-            maxTokens = c.maxTokens
+            maxTokens = c.maxTokens,
+            toolsJson = if (tools.isEmpty()) null else com.nekonyan.assistant.core.agent.AgentJson.toolsSchema(tools)
         )
         val call = newCall(c, bodyJson, stream = true)
         onCallCreated(call)
@@ -85,17 +92,26 @@ class DeepSeekClient(private val baseClient: OkHttpClient = defaultClient()) {
                     )
                 }
                 if (payload == null) return ChatOutcome.Failure("服务端返回了空响应")
-                when (val r = readStream(payload.source(), onDelta, onReasoning)) {
-                    is ReadResult.Ok ->
-                        if (r.text.isEmpty()) {
-                            ChatOutcome.Failure(
+                val toolCalls = com.nekonyan.assistant.core.agent.ToolCallAccumulator()
+                when (val r = readStream(payload.source(), onDelta, onReasoning, toolCalls)) {
+                    is ReadResult.Ok -> {
+                        val calls = toolCalls.finish()
+                        when {
+                            // 只有工具调用、没有文本：这是合法的 function calling 回合
+                            calls.isNotEmpty() -> {
+                                NekoLog.info(NekoLog.MODULE_NET, "chat_tool_calls", "工具调用 ${calls.size} 个")
+                                ChatOutcome.Success(r.text, calls)
+                            }
+                            r.text.isEmpty() -> ChatOutcome.Failure(
                                 "服务端没有返回内容：确认模型名（当前 ${c.model}）与账户额度",
                                 retryable = false
                             )
-                        } else {
-                            NekoLog.info(NekoLog.MODULE_NET, "chat_done", "长度=${r.text.length}")
-                            ChatOutcome.Success(r.text)
+                            else -> {
+                                NekoLog.info(NekoLog.MODULE_NET, "chat_done", "长度=${r.text.length}")
+                                ChatOutcome.Success(r.text)
+                            }
                         }
+                    }
                     is ReadResult.Error -> ChatOutcome.Failure(r.message, retryable = false)
                 }
             }
@@ -159,12 +175,15 @@ class DeepSeekClient(private val baseClient: OkHttpClient = defaultClient()) {
     private fun readStream(
         source: BufferedSource,
         onDelta: (String) -> Unit,
-        onReasoning: (String) -> Unit
+        onReasoning: (String) -> Unit,
+        toolCalls: com.nekonyan.assistant.core.agent.ToolCallAccumulator? = null
     ): ReadResult {
         val framer = SseFramer()
         val sb = StringBuilder()
 
         fun consume(data: String) {
+            // 流式工具调用：分片累积（id/name 只在首片，arguments 逐字符到达）
+            toolCalls?.let { acc -> DeepSeekResponse.toolCallDeltas(data).forEach { acc.feed(it) } }
             DeepSeekResponse.deltaReasoning(data)?.let(onReasoning)
             DeepSeekResponse.deltaText(data)?.let {
                 sb.append(it)

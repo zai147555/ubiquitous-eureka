@@ -127,7 +127,8 @@ class ChatRepository(
         history: List<PromptMessage>,
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit = {},
-        onCallCreated: (Call) -> Unit = {}
+        onCallCreated: (Call) -> Unit = {},
+        tools: List<com.nekonyan.assistant.core.agent.AgentTool> = emptyList()
     ): ChatOutcome {
         val messages = PromptComposer.compose(systemPrompt, history)
         return client.streamChat(
@@ -135,7 +136,8 @@ class ChatRepository(
             messages = messages,
             onDelta = onDelta,
             onReasoning = onReasoning,
-            onCallCreated = onCallCreated
+            onCallCreated = onCallCreated,
+            tools = tools
         )
     }
 
