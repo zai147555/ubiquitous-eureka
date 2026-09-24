@@ -69,6 +69,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.VolumeUp
 
 /**
  * 主界面（需求原文）：
@@ -94,6 +95,8 @@ fun MainScreen(
     onDismissError: () -> Unit = {},
     /** 导入文件/照片：参数为 (uri, 是否图片) */
     onAttachment: (android.net.Uri, Boolean) -> Unit = { _, _ -> },
+    /** 朗读某条消息（TTS + 可选 RVC 变声） */
+    onSpeak: (String) -> Unit = {},
     /** 右上角 ＋：新建对话 / 管理对话 */
     sessions: List<com.nekonyan.assistant.data.db.ConversationSession> = emptyList(),
     currentSessionId: String? = null,
@@ -237,7 +240,11 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(messages, key = { it.id }) { msg ->
-                        ChatBubble(msg, status = if (msg.fromUser) "已发送" else null)
+                        ChatBubble(
+                            msg,
+                            status = if (msg.fromUser) "已发送" else null,
+                            onSpeak = if (msg.fromUser) null else ({ onSpeak(msg.text) })
+                        )
                     }
 
                     if (streamingText.isNotEmpty()) {
@@ -402,7 +409,11 @@ data class ChatMessage(
  * 长文本自动换行：Text 默认 softWrap，气泡宽度限制在 82% 以内，不会横向溢出。
  */
 @Composable
-private fun ChatBubble(msg: ChatMessage, status: String? = null) {
+private fun ChatBubble(
+    msg: ChatMessage,
+    status: String? = null,
+    onSpeak: (() -> Unit)? = null
+) {
     val alignment = if (msg.fromUser) Alignment.CenterEnd else Alignment.CenterStart
     val bg = if (msg.fromUser) {
         MaterialTheme.colorScheme.primaryContainer
@@ -431,6 +442,17 @@ private fun ChatBubble(msg: ChatMessage, status: String? = null) {
                     color = fg,
                     style = MaterialTheme.typography.bodyLarge
                 )
+                // 需求：助手说的话可以朗读（TTS + 可选 RVC 变声）
+                if (onSpeak != null) {
+                    IconButton(onClick = onSpeak, modifier = Modifier.padding(top = 2.dp)) {
+                        Icon(
+                            Icons.Filled.VolumeUp,
+                            contentDescription = "朗读这条消息",
+                            tint = fg.copy(alpha = 0.75f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
                 Row(
                     Modifier
                         .fillMaxWidth()

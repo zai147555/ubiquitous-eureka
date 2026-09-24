@@ -14,6 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nekonyan.assistant.NekoApp
+import com.nekonyan.assistant.core.voice.RvcClient
+import com.nekonyan.assistant.core.voice.VoicePipeline
+import com.nekonyan.assistant.data.repo.VoiceSettingsStore
 import com.nekonyan.assistant.core.perm.PermissionGuideStore
 import com.nekonyan.assistant.ui.component.PermissionGuideDialog
 import com.nekonyan.assistant.ui.screen.ChatViewModel
@@ -30,6 +33,8 @@ import com.nekonyan.assistant.ui.screen.TasksScreen
 import com.nekonyan.assistant.ui.screen.YoloModelScreen
 import com.nekonyan.assistant.ui.theme.NekoTheme
 import com.nekonyan.assistant.ui.theme.ThemeViewModel
+import androidx.compose.runtime.DisposableEffect
+import kotlinx.coroutines.launch
 
 /**
  * 应用根组件：主题 + 路由 + 聊天状态。
@@ -47,6 +52,15 @@ fun NekoAppRoot() {
 
     val chatVm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)
     val chatState by chatVm.state.collectAsStateWithLifecycle()
+
+    // 说话链路：TTS 合成 → （配了 RVC 才）变声 → 播放
+    val voiceScope = androidx.compose.runtime.rememberCoroutineScope()
+    val voice = androidx.compose.runtime.remember { VoicePipeline(NekoApp.context()) }
+    val voiceStore = androidx.compose.runtime.remember { VoiceSettingsStore(NekoApp.context()) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { voice.init { } }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { voice.release() }
+    }
 
     NekoTheme(
         themeId = appearance.themeId,
@@ -90,6 +104,12 @@ fun NekoAppRoot() {
                         errorText = chatState.error,
                         onDismissError = { chatVm.clearError() },
                         onAttachment = { uri, isImage -> chatVm.importAttachment(uri, isImage) },
+                        onSpeak = { text ->
+        voiceScope.launch {
+            val url = voiceStore.rvcUrl()
+            voice.speak(text, if (url.isBlank()) null else RvcClient(url))
+        }
+                        },
                         sessions = chatState.sessions,
                         currentSessionId = chatState.currentSessionId,
                         onNewConversation = { chatVm.newConversation() },
