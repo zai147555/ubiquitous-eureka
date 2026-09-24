@@ -61,6 +61,47 @@ fun NekoAppRoot() {
         onDispose { voice.release() }
     }
 
+    // ---------------- 自动朗读回复 ----------------
+    // 判定逻辑在 AutoSpeakPolicy 里（纯函数 + 单元测试）：首次只记基准不念历史、
+    // 关闭状态下收到的回复不补念、同一条只念一次。这里只负责持有状态与真正朗读。
+    val lastSpokenId = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<String?>(null)
+    }
+    val autoSpeakReady = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
+    val speakJob = androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<kotlinx.coroutines.Job?>(null)
+    }
+    androidx.compose.runtime.LaunchedEffect(chatState.messages) {
+        val lastAi = chatState.messages.lastOrNull { !it.fromUser && it.text.isNotBlank() }
+            ?: return@LaunchedEffect
+        // 每次现读设置：用户在设置页改的开关，回到聊天页立刻生效
+        val decision = com.nekonyan.assistant.core.voice.AutoSpeakPolicy.decide(
+            baselineReady = autoSpeakReady.value,
+            seenId = lastSpokenId.value,
+            newId = lastAi.id,
+            newText = lastAi.text,
+            enabled = voiceStore.autoSpeak()
+        )
+        autoSpeakReady.value = true
+        when (decision) {
+            is com.nekonyan.assistant.core.voice.AutoSpeakDecision.Speak -> {
+                lastSpokenId.value = decision.id
+                speakJob.value?.cancel()      // 连续两条回复不叠着响
+                speakJob.value = voiceScope.launch {
+                    val msg = voice.speak(decision.text, voiceStore.load())
+                    com.nekonyan.assistant.core.log.NekoLog.info(
+                        com.nekonyan.assistant.core.log.NekoLog.MODULE_AI, "auto_speak", msg
+                    )
+                }
+            }
+            is com.nekonyan.assistant.core.voice.AutoSpeakDecision.Remember ->
+                lastSpokenId.value = decision.id
+            com.nekonyan.assistant.core.voice.AutoSpeakDecision.Ignore -> Unit
+        }
+    }
+
     NekoTheme(
         themeId = appearance.themeId,
         fontScale = appearance.fontScale,

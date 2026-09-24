@@ -179,7 +179,16 @@ fun SettingsScreen(
                 val ctx = androidx.compose.ui.platform.LocalContext.current
                 val store = remember { com.nekonyan.assistant.data.repo.VoiceSettingsStore(ctx) }
                 var voiceSettings by remember { mutableStateOf(store.load()) }
+                var autoSpeak by remember { mutableStateOf(store.autoSpeak()) }
                 var showVoiceDialog by remember { mutableStateOf(false) }
+                SwitchRow(
+                    title = "自动朗读回复（收到回复就自动播放语音）",
+                    checked = autoSpeak,
+                    onCheckedChange = { on ->
+                        autoSpeak = on
+                        store.setAutoSpeak(on)
+                    }
+                )
                 SwitchRow(
                     title = "用微软官方语音（免部署，推荐）",
                     checked = voiceSettings.edgeEnabled,
@@ -188,18 +197,44 @@ fun SettingsScreen(
                         store.saveEdge(on, voiceSettings.edgeVoice, voiceSettings.edgeRate, voiceSettings.edgePitch)
                     }
                 )
+
+                Text(
+                    "当前音色：" + (com.nekonyan.assistant.core.voice.EdgeTtsClient.FALLBACK_VOICES
+                        .firstOrNull { it.shortName == voiceSettings.edgeVoice }?.friendlyName
+                        ?: voiceSettings.edgeVoice) + "（语速 ${voiceSettings.edgeRate}）",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+
+                // 快捷更换：常用音色一点即换，不用进对话框
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    com.nekonyan.assistant.core.voice.EdgeTtsClient.FALLBACK_VOICES.take(4).forEach { v ->
+                        FilterChip(
+                            selected = voiceSettings.edgeVoice == v.shortName,
+                            onClick = {
+                                voiceSettings = voiceSettings.copy(edgeVoice = v.shortName)
+                                store.saveEdge(
+                                    voiceSettings.edgeEnabled, v.shortName,
+                                    voiceSettings.edgeRate, voiceSettings.edgePitch
+                                )
+                            },
+                            label = { Text(v.friendlyName.substringBefore(" ·")) }
+                        )
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                 ) {
                     Text(
-                        "当前音色：" + (com.nekonyan.assistant.core.voice.EdgeTtsClient.FALLBACK_VOICES
-                            .firstOrNull { it.shortName == voiceSettings.edgeVoice }?.friendlyName
-                            ?: voiceSettings.edgeVoice) + "（语速 ${voiceSettings.edgeRate}）",
+                        "换音色 / 调语速 / 试听（官方共 300+ 个音色）",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = { showVoiceDialog = true }) { Text("选择 / 试听") }
+                    TextButton(onClick = { showVoiceDialog = true }) { Text("更换音色") }
                 }
                 if (showVoiceDialog) {
                     com.nekonyan.assistant.ui.component.VoiceSettingsDialog(
