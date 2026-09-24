@@ -40,6 +40,8 @@ data class ChatUiState(
     val error: String? = null,
     /** 还没配好 Key/地址：界面据此提示去配置页 */
     val needConfig: Boolean = false,
+    /** 正在执行的工具（界面上显示"正在调用 XX…"，让用户知道模型在干活而不是卡住） */
+    val toolStatus: String? = null,
     /** 全部会话（右上角 ＋ 的管理面板用） */
     val sessions: List<com.nekonyan.assistant.data.db.ConversationSession> = emptyList(),
     val currentSessionId: String? = null
@@ -220,17 +222,19 @@ class ChatViewModel(
                 )
                 // ② 逐个执行，把结果按 tool_call_id 回灌
                 step.calls.forEach { call ->
-                    _state.update { it.copy(error = null) }
+                    _state.update { it.copy(error = null, toolStatus = toolLabel(call.name)) }
                     NekoLog.info(NekoLog.MODULE_AI, "tool_call", "第 ${round} 轮：${call.name}")
                     val result = toolExecutor.execute(call)
                     history.add(PromptMessage.toolResult(result.callId, result.content))
                     prevCalls.add(call)
                 }
+                _state.update { it.copy(toolStatus = null) }
             }
 
             // ---------------- 收尾 ----------------
             // streamingText 累积了本次所有轮次的可见文本（模型可能先说"我查一下"再回答）
             val partial = _state.value.streamingText
+            _state.update { it.copy(toolStatus = null) }
             when {
                 failure != null -> {
                     if (partial.isNotBlank()) repo.appendMessage(sid, Message.ROLE_ASSISTANT, partial)
@@ -298,6 +302,17 @@ class ChatViewModel(
             val sid = currentSession()
             repo.appendMessage(sid, Message.ROLE_USER, text)
         }
+    }
+
+    /** 工具名 → 给用户看的动作描述（不要直接显示 kb_search 这种内部名） */
+    private fun toolLabel(name: String): String = when (name) {
+        "kb_search" -> "正在查知识库…"
+        "now" -> "正在看时间…"
+        "web_fetch" -> "正在读网页…"
+        "yolo_detect_local" -> "正在本地识别图片…"
+        "yolo_detect_service" -> "正在调用识别服务…"
+        "music_play" -> "准备播放音乐…"
+        else -> "正在执行工具…"
     }
 
     fun clearError() = _state.update { it.copy(error = null) }

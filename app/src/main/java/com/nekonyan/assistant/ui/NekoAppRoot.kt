@@ -98,7 +98,8 @@ fun NekoAppRoot() {
                         onSend = chatVm::send,
                         // 需求：始终有紧急停止 —— 这里真的会切断网络请求，不只是改个状态
                         onEmergencyStop = { chatVm.stop() },
-                        runningTaskLabel = if (chatState.streaming) "猫娘助手正在回复" else null,
+                        runningTaskLabel = chatState.toolStatus
+                            ?: if (chatState.streaming) "猫娘助手正在回复" else null,
                         messages = chatState.messages,
                         streamingText = chatState.streamingText,
                         errorText = chatState.error,
