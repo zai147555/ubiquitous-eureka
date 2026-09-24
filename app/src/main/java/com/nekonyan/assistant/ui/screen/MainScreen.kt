@@ -109,6 +109,9 @@ fun MainScreen(
     /** 动作类工具（如"播放《X》"）正等用户点头：非空则弹确认框 */
     pendingConfirm: PendingActConfirm? = null,
     onAnswerConfirm: (Boolean) -> Unit = {},
+    /** 侧边栏「悬浮窗聊天」：开关悬浮气泡（不是路由，所以单独回调） */
+    onToggleOverlay: () -> Unit = {},
+    overlayRunning: Boolean = false,
     onDrawerOpened: () -> Unit = {}
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -153,7 +156,9 @@ fun MainScreen(
                     onSelect = { route ->
                         scope.launch { drawerState.close() }
                         onOpenRoute(route)
-                    }
+                    },
+                    onToggleOverlay = onToggleOverlay,
+                    overlayRunning = overlayRunning
                 )
             }
         }

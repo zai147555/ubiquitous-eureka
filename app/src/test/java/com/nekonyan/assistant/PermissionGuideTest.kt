@@ -29,7 +29,16 @@ class PermissionGuideTest {
         PermissionGuide.ITEMS.forEach {
             assertTrue("「${it.title}」缺少用途说明", it.purpose.length > 8)
         }
-        assertTrue(PermissionGuide.ITEMS.count { it.required } >= 5)
+        // 断言语义而不是魔数：核心功能那几项必须是「必需」
+        assertTrue(PermissionGuide.ITEMS.count { it.required } >= 4)
+        // 悬浮窗**只能是按需**：它仅在用户主动开启悬浮窗聊天时才需要。
+        // 之前它被标成必需，导致 App 向用户索要一个当时根本不存在的能力（M3 未实现），
+        // 这条断言就是防止那种"文案承诺了功能却没有"的回归。
+        val overlay = PermissionGuide.ITEMS.first {
+            it.key == com.nekonyan.assistant.core.perm.PermissionGuide.KEY_OVERLAY
+        }
+        assertFalse("悬浮窗应为按需权限", overlay.required)
+        assertTrue("悬浮窗说明要讲清何时才需要", overlay.purpose.contains("悬浮窗聊天"))
     }
 
     @Test

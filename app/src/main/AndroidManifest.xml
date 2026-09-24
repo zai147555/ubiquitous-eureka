@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- 悬浮窗聊天：Android 14+ 前台服务必须声明类型，specialUse 需配 subtype 属性 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 权限引导（修改.ds 第五项）涉及的运行时权限 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -79,6 +81,16 @@
           无障碍服务（只读语义树采集）。exported=true + BIND_ACCESSIBILITY_SERVICE 是系统绑定所必需：
           系统进程要能绑定它，而权限声明保证只有系统能绑。
         -->
+        <!-- 悬浮窗聊天（M3）：前台 + specialUse，否则后台一会儿就被系统杀掉 -->
+        <service
+            android:name=".core.overlay.OverlayChatService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_chat_overlay" />
+        </service>
+
         <service
             android:name=".core.access.NekoAccessibilityService"
             android:exported="true"

@@ -50,8 +50,9 @@ object PermissionGuide {
         ),
         PermissionItem(
             KEY_OVERLAY, "悬浮窗",
-            "悬浮窗聊天需要「显示在其他应用上层」；不给则无法在其他 App 上显示聊天窗。",
-            required = true
+            "只有开启「悬浮窗聊天」时才需要「显示在其他应用上层」；" +
+                "不给也不影响 App 内的聊天与其它功能。",
+            required = false
         ),
         PermissionItem(
             KEY_ACCESSIBILITY, "无障碍",

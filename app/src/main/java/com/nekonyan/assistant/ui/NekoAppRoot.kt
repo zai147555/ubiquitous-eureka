@@ -52,6 +52,10 @@ fun NekoAppRoot() {
     val chatVm: ChatViewModel = viewModel(factory = ChatViewModel.Factory)
     val chatState by chatVm.state.collectAsStateWithLifecycle()
 
+    // 悬浮窗实际运行状态（服务里改，界面跟着变）
+    val overlayRunning by com.nekonyan.assistant.core.overlay.OverlayChatService
+        .runningFlow.collectAsStateWithLifecycle()
+
     // 说话链路：TTS 合成 → （配了 RVC 才）变声 → 播放
     val voiceScope = androidx.compose.runtime.rememberCoroutineScope()
     val voice = androidx.compose.runtime.remember { VoicePipeline(NekoApp.context()) }
@@ -159,6 +163,26 @@ fun NekoAppRoot() {
                         onDeleteSession = { chatVm.deleteConversation(it) },
                         pendingConfirm = chatState.pendingConfirm,
                         onAnswerConfirm = { chatVm.answerConfirm(it) },
+                        overlayRunning = overlayRunning,
+                        onToggleOverlay = {
+                            val ctx = NekoApp.context()
+                            when {
+                                com.nekonyan.assistant.core.overlay.OverlayChatService.running ->
+                                    com.nekonyan.assistant.core.overlay.OverlayChatService.hide(ctx)
+                                // 没授权就**直接把用户送到系统授权页**，
+                                // 而不是弹一句"请去设置里授权"让他自己找
+                                !com.nekonyan.assistant.core.overlay.OverlayChatService.canDraw(ctx) ->
+                                    runCatching {
+                                        ctx.startActivity(
+                                            android.content.Intent(
+                                                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                android.net.Uri.parse("package:${ctx.packageName}")
+                                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    }
+                                else -> com.nekonyan.assistant.core.overlay.OverlayChatService.show(ctx)
+                            }
+                        },
                         startWithDrawerOpen = backToDrawer,
                         onDrawerOpened = { backToDrawer = false }
                     )

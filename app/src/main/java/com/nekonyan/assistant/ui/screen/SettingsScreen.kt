@@ -173,6 +173,40 @@ fun SettingsScreen(
                 )
             }
 
+            // ---------------- 悬浮窗 ----------------
+            GroupTitle("悬浮窗")
+            SettingBlock("悬浮窗聊天") {
+                val ovCtx = androidx.compose.ui.platform.LocalContext.current
+                val overlayOn by com.nekonyan.assistant.core.overlay.OverlayChatService
+                    .runningFlow.collectAsStateWithLifecycle()
+                SwitchRow(
+                    title = "在其他 App 上显示悬浮聊天窗",
+                    checked = overlayOn,
+                    onCheckedChange = { on ->
+                        when {
+                            !on -> com.nekonyan.assistant.core.overlay.OverlayChatService.hide(ovCtx)
+                            !com.nekonyan.assistant.core.overlay.OverlayChatService.canDraw(ovCtx) ->
+                                runCatching {
+                                    ovCtx.startActivity(
+                                        android.content.Intent(
+                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:${ovCtx.packageName}")
+                                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            else -> com.nekonyan.assistant.core.overlay.OverlayChatService.show(ovCtx)
+                        }
+                    }
+                )
+                Text(
+                    "开启后可在其他 App 上层显示一个可拖动气泡，点开随时聊天（聊天记录与 App 内是同一份）；" +
+                        "首次开启会先要「显示在其他应用上层」权限。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
             // ---------------- 语音朗读 ----------------
             GroupTitle("语音朗读")
             SettingBlock("朗读音色") {

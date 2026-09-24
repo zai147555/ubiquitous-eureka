@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Text
@@ -61,6 +62,9 @@ val NekoDrawerEntries: List<DrawerEntry> = listOf(
 @Composable
 fun NekoDrawerContent(
     onSelect: (NekoRoute) -> Unit,
+    /** 悬浮窗是**动作**不是路由**：所以单独给一个回调与状态，而不是塞进 NekoRoute */
+    onToggleOverlay: () -> Unit = {},
+    overlayRunning: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.verticalScroll(rememberScrollState())) {
@@ -103,5 +107,14 @@ fun NekoDrawerContent(
                 modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
             )
         }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+        NavigationDrawerItem(
+            label = { Text(if (overlayRunning) "收起悬浮窗" else "悬浮窗聊天") },
+            icon = { Icon(Icons.Filled.PictureInPicture, contentDescription = null) },
+            selected = overlayRunning,
+            onClick = onToggleOverlay,
+            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+        )
     }
 }
