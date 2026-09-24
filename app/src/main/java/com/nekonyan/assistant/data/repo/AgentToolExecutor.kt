@@ -28,11 +28,12 @@ import com.nekonyan.assistant.core.yolo.NcnnDetector
  * 已接通：`now`（纯本地）、`kb_search`（读 Room）、`web_fetch`（OkHttp 抓取＋剥标签取正文）、
  * `yolo_detect_local`（NcnnDetector 跑内置模型）、`yolo_detect_service`（YoloServiceClient 发服务端）。
  *
- * 两个如实拒绝的情况（**假成功比失败更难查**：模型会拿空结果继续推理，最后给出看似合理却
- * 毫无依据的答案）：
- *   · `yolo_*` 的 `source=screen`：抓屏服务（M4）没有对外暴露"取一帧"的接口，
- *     所以只能检测**图片文件路径**（`source=file` + `path`），不能假装检测了屏幕；
- *   · `music_play`：播放器句柄由「音乐」页的界面自己持有，工具层拿不到，需要先抽播放服务。
+ 两个 `yolo_*` 工具都支持 `source=screen`（走 [ScreenCaptureService.acquireFrame] 按需取帧）
+ 与 `source=file`（读 path 指向的图片文件）；屏幕捕获没开时如实说明，不假装检测了屏幕。
+ *
+ * 仍如实拒绝的：`music_play` —— 播放器句柄由「音乐」页的界面自己持有，工具层拿不到，
+ * 需要先抽一个共享播放服务（**假成功比失败更难查**：模型会拿空结果继续推理，
+ * 最后给出看似合理却毫无依据的答案）。
  *
  * `kb_search` 的一个关键点：检索用的是 DAO 的 `itemsForAI()`，
  * 也就是**用户在知识库里关掉 AI 访问的分类，AI 根本读不到** ——
@@ -43,7 +44,9 @@ class AgentToolExecutor(
     private val knowledgeDao: KnowledgeDao,
     private val aiKnowledgeDao: AIKnowledgeDao,
     /** 用户已确认可执行的动作类工具名（由界面授权后传入） */
-    private val confirmedTools: Set<String> = emptySet()
+    private val confirmedTools: Set<String> = emptySet(),
+    /** 模型表：用来按用户当前选中的模型加载检测器（与 yolo.ds 页保持一致） */
+    private val yoloModelDao: com.nekonyan.assistant.data.db.YoloModelDao? = null
 ) {
 
     private val http: okhttp3.OkHttpClient = com.nekonyan.assistant.core.net.DeepSeekClient.defaultClient()
@@ -89,12 +92,16 @@ class AgentToolExecutor(
         "web_fetch" -> webFetch(call)
         "yolo_detect_local" -> yoloLocal(call)
         "yolo_detect_service" -> yoloService(call)
-        "music_play" -> ToolResult(
-            call.id, call.name,
-            "播放功能不在服务层：音乐页的播放器由界面自己持有，工具层拿不到播放句柄。" +
-                "请告诉用户到「音乐」页手动点播，或说明这个能力需要先做播放服务。",
-            false
-        )
+        "music_play" -> {
+            val title = args(call).optString("title", "").trim()
+            ToolResult(
+                call.id, call.name,
+                "现在还没法直接播：音乐页的播放器由界面自己持有，工具层拿不到播放句柄。" +
+                    (if (title.isNotEmpty()) "请让用户到「音乐」页搜「$title」手动点播，" else "请让用户到「音乐」页手动点播，") +
+                    "或如实说明这个能力要先做播放服务才能用。",
+                false
+            )
+        }
         else -> ToolResult(call.id, call.name, "未知工具：${call.name}", false)
     }
 
@@ -140,32 +147,41 @@ class AgentToolExecutor(
     // ---------------- YOLO ----------------
 
     /**
-     * 本地检测：目前只支持**指定图片文件路径**（source=file）。
-     * source=screen 暂不可用 —— M4 的抓屏服务没有对外暴露"取一帧"的接口，
-     * 这一点如实说明，而不是假装检测了屏幕。
+     * 取一张待检测的图（local / service 共用，**调用方负责 recycle**）。
+     *
+     * @return (bitmap, 失败原因)；两者必有一个为 null
      */
-    private suspend fun yoloLocal(call: ToolCall): ToolResult {
-        val a = args(call)
-        val source = a.optString("source", "")
-        if (source == "screen") {
-            return ToolResult(
-                call.id, call.name,
-                "暂不支持直接检测屏幕：抓屏服务（M4）目前没有对外提供取帧接口。" +
-                    "请让用户给出图片路径（source=file + path），或在截屏保存后传入路径。",
-                false
-            )
+    private suspend fun resolveFrame(a: JSONObject): Pair<android.graphics.Bitmap?, String?> {
+        if (a.optString("source", "file") == "screen") {
+            if (!com.nekonyan.assistant.core.capture.ScreenCaptureService.running) {
+                return null to "屏幕捕获没在运行：请先在首页点「开启屏幕捕获」并授权后，再让我识别屏幕"
+            }
+            val f = com.nekonyan.assistant.core.capture.ScreenCaptureService.acquireFrame()
+                ?: return null to "取帧失败或超时（2 秒内没拿到画面），可以稍后再试一次"
+            return f to null
         }
         val path = a.optString("path", "").trim()
-        if (path.isEmpty()) {
-            return ToolResult(call.id, call.name, "需要提供图片路径 path（source=file）", false)
-        }
+        if (path.isEmpty()) return null to "source=file 时必须给 path（图片文件绝对路径）"
         val file = java.io.File(path)
-        if (!file.isFile) return ToolResult(call.id, call.name, "文件不存在：$path", false)
-
+        if (!file.isFile) return null to "文件不存在：$path"
         val bmp = android.graphics.BitmapFactory.decodeFile(path)
-            ?: return ToolResult(call.id, call.name, "解码图片失败：$path", false)
+        return if (bmp == null) null to "解码图片失败：$path" else bmp to null
+    }
+
+    /** 本地检测：source=screen 取当前屏幕帧，否则读 path 指定的图片文件 */
+    private suspend fun yoloLocal(call: ToolCall): ToolResult {
+        val a = args(call)
+        val (bmp, err) = resolveFrame(a)
+        if (bmp == null) return ToolResult(call.id, call.name, err ?: "取图失败", false)
         return try {
-            ensureDetector()
+            // 加载失败必须如实说 —— 否则 detect 返回空列表，会被说成"没检出目标"（假成功）
+            if (!ensureDetector()) {
+                return ToolResult(
+                    call.id, call.name,
+                    "本地模型没加载起来（原生库缺失或模型文件不完整）。可到「模型」页跑一次自检看具体原因。",
+                    false
+                )
+            }
             val confVal = a.optDouble("conf", 0.3).toFloat().coerceIn(0.05f, 0.95f)
             val dets = NcnnDetector.detect(bmp, conf = confVal)
             if (dets.isEmpty()) {
@@ -186,27 +202,27 @@ class AgentToolExecutor(
         }
     }
 
-    /** 服务端检测：同样只支持文件路径（图片字节要发出去） */
+    /** 服务端检测：取图（屏幕或文件）后压成 JPEG 发出去 */
     private suspend fun yoloService(call: ToolCall): ToolResult {
         val a = args(call)
-        val path = a.optString("path", "").trim()
-        if (a.optString("source", "") == "screen") {
-            return ToolResult(call.id, call.name, "暂不支持屏幕（取帧接口未暴露），请给出图片路径", false)
-        }
-        if (path.isEmpty()) return ToolResult(call.id, call.name, "需要提供图片路径 path", false)
-        val file = java.io.File(path)
-        if (!file.isFile) return ToolResult(call.id, call.name, "文件不存在：$path", false)
+        val (bmp, err) = resolveFrame(a)
+        if (bmp == null) return ToolResult(call.id, call.name, err ?: "取图失败", false)
 
         val creds = com.nekonyan.assistant.core.security.BuiltinSecretStore.load(context)
-            ?: return ToolResult(call.id, call.name, "内置凭据里没有检测服务地址", false)
+            ?: run { bmp.recycle(); return ToolResult(call.id, call.name, "内置凭据里没有检测服务地址", false) }
         val (base, token) = creds
         // 统一压成 JPEG（服务端接受 jpg/png，但统一格式省得判断）
         val bytes = runCatching {
-            val bmp = android.graphics.BitmapFactory.decodeFile(path) ?: return@runCatching null
-            java.io.ByteArrayOutputStream().also { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it); bmp.recycle() }.toByteArray()
-        }.getOrNull() ?: return ToolResult(call.id, call.name, "解码图片失败", false)
+            java.io.ByteArrayOutputStream().also {
+                bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it)
+            }.toByteArray()
+        }.getOrElse {
+            bmp.recycle()
+            return ToolResult(call.id, call.name, "图片编码失败：${it.javaClass.simpleName}", false)
+        }
+        bmp.recycle()
 
-        return when (val r = service.detect(base, token, bytes, file.name)) {
+        return when (val r = service.detect(base, token, bytes, "frame.jpg")) {
             is com.nekonyan.assistant.core.net.ServiceOutcome.Ok -> {
                 val d = r.value
                 val sb = StringBuilder("服务端检出 ${d.count} 个目标（耗时 ${"%.0f".format(d.totalMs)}ms）：\n")
@@ -223,11 +239,34 @@ class AgentToolExecutor(
         }
     }
 
-    /** 首次用到时加载内置模型（assets 兜底路径由 NcnnDetector 自己处理） */
-    private fun ensureDetector() {
-        if (detectorReady) return
-        detectorReady = NcnnDetector.init(context = context, modelDir = null, useGpu = false, inputSize = 640)
-        NekoLog.info(NekoLog.MODULE_YOLO, "agent_detector_init", "ready=$detectorReady 类别=${NcnnDetector.labels.size}")
+    /**
+     * 确保检测器可用。
+     *
+     * 两条硬规则（都是踩过的坑）：
+     *   ① **已加载就不动它** —— 用户可能在 yolo.ds 页自检过、或刚热更新过模型，
+     *      这里再 init 一次会把人家生效中的模型冲掉；
+     *   ② 真要加载时用**用户当前选中的模型**（config.currentModelId → dirPath/inputSize），
+     *      而不是无条件回退内置 assets，否则同一个 App 里两个页面会用不同的模型。
+     *   取不到记录时才回退 assets（由 NcnnDetector 自己处理）。
+     */
+    private suspend fun ensureDetector(): Boolean {
+        if (NcnnDetector.isReady || detectorReady) return true
+        val current = runCatching {
+            val id = yoloModelDao?.config()?.currentModelId.orEmpty()
+            if (id.isBlank()) null else yoloModelDao?.byId(id)
+        }.getOrNull()
+        val dir = current?.dirPath?.let { java.io.File(it) }?.takeIf { it.isDirectory }
+        detectorReady = NcnnDetector.init(
+            context = context,
+            modelDir = dir,
+            useGpu = false,
+            inputSize = current?.inputSize ?: 640
+        )
+        NekoLog.info(
+            NekoLog.MODULE_YOLO, "agent_detector_init",
+            "ready=$detectorReady 目录=${dir?.name ?: "assets 兜底"} 类别=${NcnnDetector.labels.size}"
+        )
+        return detectorReady
     }
 
     // ---------------- now ----------------

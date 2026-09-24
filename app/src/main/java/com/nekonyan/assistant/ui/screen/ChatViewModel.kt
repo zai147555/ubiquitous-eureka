@@ -335,7 +335,9 @@ class ChatViewModel(
                     toolExecutor = AgentToolExecutor(
                         context = NekoApp.context(),
                         knowledgeDao = db.knowledgeDao(),
-                        aiKnowledgeDao = db.aiKnowledgeDao()
+                        aiKnowledgeDao = db.aiKnowledgeDao(),
+                        // 让工具用「用户当前选中的模型」，和 yolo.ds 页保持一致
+                        yoloModelDao = db.yoloModelDao()
                     )
                 )
             }

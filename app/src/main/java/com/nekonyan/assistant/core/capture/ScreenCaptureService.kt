@@ -21,6 +21,8 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import com.nekonyan.assistant.R
 import com.nekonyan.assistant.core.log.NekoLog
 import com.nekonyan.assistant.core.yolo.NcnnDetector
@@ -50,6 +52,14 @@ class ScreenCaptureService : Service() {
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var reader: ImageReader? = null
+
+    /**
+     * 按需取帧的等待者（agent 的 source=screen 用）。
+     *
+     * ImageReader 的监听器**每帧都触发**（500ms 节流只挡自动检测），所以这里等一帧的
+     * 延迟约等于一个 vsync，不需要为取帧再开一条抓屏链路。
+     */
+    @Volatile private var grabWaiter: CompletableDeferred<Bitmap?>? = null
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
     private var lastDetectAt = 0L
@@ -59,6 +69,8 @@ class ScreenCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 登记实例：取帧接口靠它找到正在跑的捕获服务（stopSelf 后由 onDestroy 清空）
+        instance = this
         when (intent?.action) {
             ACTION_STOP -> {
                 stopCapture()
@@ -82,6 +94,10 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onDestroy() {
+        // 先唤醒等在取帧上的调用方，再收摊：否则它要白等到超时
+        grabWaiter?.complete(null)
+        grabWaiter = null
+        instance = null
         stopCapture()
         super.onDestroy()
     }
@@ -131,6 +147,8 @@ class ScreenCaptureService : Service() {
         r.setOnImageAvailableListener({ rd ->
             val image = rd.acquireLatestImage() ?: return@setOnImageAvailableListener
             try {
+                // 有人在等帧就优先交付（不受自动检测节流影响）
+                deliverIfWaiting(image, w, h)
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastDetectAt >= DETECT_INTERVAL_MS) {
                     lastDetectAt = now
@@ -154,6 +172,15 @@ class ScreenCaptureService : Service() {
         NekoLog.info(NekoLog.MODULE_PROJECTION, "capture_started", "${w}x$h @ ${DETECT_INTERVAL_MS}ms")
     }
 
+    /** 有人在等帧就把这一帧交付出去（一帧只交付一次）；转换失败也要 complete(null)，避免调用方空等 */
+    private fun deliverIfWaiting(image: Image, w: Int, h: Int) {
+        val waiter = grabWaiter ?: return
+        grabWaiter = null
+        // 用 complete(null) 表达失败：completeExceptionally 会让 await() 抛异常，
+        // 而这条接口的约定是"取不到就返回 null"，不该把异常丢给工具层
+        waiter.complete(imageToBitmap(image, w, h))
+    }
+
     private fun onFrame(image: Image, w: Int, h: Int) {
         val bitmap = imageToBitmap(image, w, h) ?: return
         frames++
@@ -174,6 +201,8 @@ class ScreenCaptureService : Service() {
     /** Image(RGBA_8888) → Bitmap：按 rowStride 建图再裁 padding，避免画面斜切 */
     private fun imageToBitmap(image: Image, w: Int, h: Int): Bitmap? = runCatching {
         val plane = image.planes[0]
+        // 同一帧可能被读两次（先交付取帧者、再跑自动检测），复位读取位置才安全
+        runCatching { plane.buffer.rewind() }
         val pixelStride = plane.pixelStride
         val rowStride = plane.rowStride
         val rowPadding = rowStride - pixelStride * w
@@ -196,6 +225,8 @@ class ScreenCaptureService : Service() {
     }
 
     companion object {
+        @Volatile private var instance: ScreenCaptureService? = null
+
         const val ACTION_START = "com.nekonyan.assistant.capture.START"
         const val ACTION_STOP = "com.nekonyan.assistant.capture.STOP"
         const val EXTRA_RESULT_CODE = "result_code"
@@ -215,6 +246,25 @@ class ScreenCaptureService : Service() {
                 putExtra(EXTRA_RESULT_DATA, data)
             }
             androidx.core.content.ContextCompat.startForegroundService(context, i)
+        }
+
+        /**
+         * 取一帧当前屏幕（**调用方负责 recycle**）。
+         *
+         * 未开启捕获 / 超时 / 帧转换失败 / 服务中途停止，一律返回 null 而**不抛异常** ——
+         * 工具层要的是"能不能给模型一句实话"，不是异常栈。
+         */
+        suspend fun acquireFrame(timeoutMs: Long = 2000L): Bitmap? {
+            val svc = instance ?: return null
+            if (!running) return null
+            val waiter = CompletableDeferred<Bitmap?>()
+            svc.grabWaiter = waiter
+            return try {
+                withTimeoutOrNull(timeoutMs) { waiter.await() }
+            } finally {
+                // 只在还是自己那次等待时清理，避免踩掉紧随其后的另一次取帧
+                if (svc.grabWaiter === waiter) svc.grabWaiter = null
+            }
         }
 
         fun stop(context: Context) {

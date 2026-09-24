@@ -30,10 +30,13 @@ object NcnnDetector {
     private const val DEFAULT_INPUT_SIZE = 640
     private const val DEFAULT_MAX_DETECTIONS = 100
 
-    private var handle: Long = 0L
+    @Volatile private var handle: Long = 0L   // isReady 会在其他线程读
     private val lock = Any()
 
     /** 当前类别表（与当前模型配套；未加载到 labels.txt 时为空表） */
+    /** 模型是否已加载（外面据此判断"要不要 init"，避免重复加载冲掉已生效的模型） */
+    val isReady: Boolean get() = handle != 0L
+
     @Volatile var labels: List<String> = emptyList()
         private set
 

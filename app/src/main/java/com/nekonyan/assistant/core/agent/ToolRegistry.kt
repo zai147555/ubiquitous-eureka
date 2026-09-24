@@ -27,12 +27,12 @@ object ToolRegistry {
         AgentTool(
             name = "yolo_detect_local",
             description = "用手机内置的 YOLOv11n 模型对一张图片或当前屏幕截图做本地目标检测（COCO 80 类），返回框与类别。",
-            parametersJson = "{$OBJ,\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要识别的图片文件绝对路径（屏幕检测尚未接入）\"},\"conf\":{\"type\":\"number\",\"description\":\"置信度阈值，默认 0.3\"}},\"required\":[\"path\"]}"
+            parametersJson = "{$OBJ,\"properties\":{\"source\":{\"type\":\"string\",\"enum\":[\"screen\",\"file\"],\"description\":\"screen=识别当前屏幕（需先开启屏幕捕获）；file=识别 path 指定的图片\"},\"path\":{\"type\":\"string\",\"description\":\"source=file 时必填：图片文件绝对路径\"},\"conf\":{\"type\":\"number\",\"description\":\"置信度阈值，默认 0.3\"}},\"required\":[\"source\"]}"
         ),
         AgentTool(
             name = "yolo_detect_service",
             description = "把一张图发到自建的 YOLO11n 检测服务做识别，返回原图坐标系下的检测框。本地模型不便处理时可选用。",
-            parametersJson = "{$OBJ,\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要识别的图片文件绝对路径（屏幕检测尚未接入）\"}},\"required\":[\"path\"]}"
+            parametersJson = "{$OBJ,\"properties\":{\"source\":{\"type\":\"string\",\"enum\":[\"screen\",\"file\"],\"description\":\"screen=识别当前屏幕（需先开启屏幕捕获）；file=识别 path 指定的图片\"},\"path\":{\"type\":\"string\",\"description\":\"source=file 时必填：图片文件绝对路径\"}},\"required\":[\"source\"]}"
         ),
         AgentTool(
             name = "web_fetch",
