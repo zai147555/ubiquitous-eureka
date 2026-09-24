@@ -49,9 +49,14 @@ class AgentToolExecutor(
     private val yoloModelDao: com.nekonyan.assistant.data.db.YoloModelDao? = null,
     /**
      * 动作类工具找用户点头：参数 (工具名, 给用户看的一句话)，返回是否允许。
-     * 默认一律拒绝 —— 界面没接确认流程时，宁可什么都不做，也不能替用户同意。
+     *
+     * **默认一律拒绝**：界面没接确认流程时，宁可什么都不做，也不能替用户同意。
+     *
+     * 之所以是 `var` 而不是构造参数：executor 是在 ViewModel 的构造过程中被建出来的，
+     * 那时 ViewModel 的 `this` 还不能捕获（构造参数里直接引用实例方法编译不过），
+     * 所以由 ViewModel 在 `init` 里补挂上来。
      */
-    private val confirmAct: suspend (String, String) -> Boolean = { _, _ -> false }
+    var confirmAct: suspend (String, String) -> Boolean = { _, _ -> false }
 ) {
 
     private val http: okhttp3.OkHttpClient = com.nekonyan.assistant.core.net.DeepSeekClient.defaultClient()

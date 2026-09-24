@@ -81,6 +81,10 @@ class ChatViewModel(
     private var mode: NekoMode = NekoMode.Default
 
     init {
+        // 动作类工具的用户确认只能在 init 里挂：executor 是在构造过程中建出来的，
+        // 构造参数里引用 askActConfirm 会 "Unresolved reference"（没有 this 可捕获）。
+        toolExecutor.confirmAct = { name, summary -> askActConfirm(name, summary) }
+
         viewModelScope.launch {
             val sid = repo.ensureSession(mode.key)
             _sessionId.value = sid
@@ -379,9 +383,7 @@ class ChatViewModel(
                         knowledgeDao = db.knowledgeDao(),
                         aiKnowledgeDao = db.aiKnowledgeDao(),
                         // 让工具用「用户当前选中的模型」，和 yolo.ds 页保持一致
-                        yoloModelDao = db.yoloModelDao(),
-                        // 动作类工具必须用户点头：这里把确认框接到聊天界面上
-                        confirmAct = { name, summary -> askActConfirm(name, summary) }
+                        yoloModelDao = db.yoloModelDao()
                     )
                 )
             }
