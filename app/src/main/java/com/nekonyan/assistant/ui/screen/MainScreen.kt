@@ -261,29 +261,6 @@ fun MainScreen(
             }
         }
     }
-}
-
-@Composable
-private fun ErrorBanner(text: String, onDismiss: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "关闭提示")
-            }
-        }
-    }
     if (showSessions) {
         SessionManagerDialog(
             sessions = sessions,
@@ -319,6 +296,27 @@ private fun ErrorBanner(text: String, onDismiss: () -> Unit) {
     }
 }
 
+@Composable
+private fun ErrorBanner(text: String, onDismiss: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Filled.Close, contentDescription = "关闭提示")
+            }
+        }
+    }
 /** 需求：底部为「输入框、发送、导入文件、照片」四件套 */
 @Composable
 private fun ChatInputBar(

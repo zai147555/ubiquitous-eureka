@@ -68,7 +68,7 @@ class ChatRepository(
         }
     }
 
-    suspend fun latestSessionId(): String? = dao.latestSession()
+    suspend fun latestSessionId(): String? = dao.latestSession()?.id   // 注意：DAO 返回的是实体，这里只要 id
 
     /** 没有会话就建一个（首启第一次进入聊天页时走这里） */
     suspend fun ensureSession(mode: String): String {
