@@ -244,8 +244,11 @@ fun SettingsScreen(
                 }
                 // 手动选图上传：**不受自动采集的策略门限**（用户明确挑的图不该被
                 // "间隔未到/与最近画面相似"拦掉），但同样按内容哈希去重、同样计入统计。
+                // 用**原生照片选择器**（QQ/微信调的就是它：九宫格 + 预览 +「原图」），
+                // 而不是 OpenMultipleDocuments —— 后者打开的是文件管理器界面，不像"发图片"。
+                // Android 13+ 走系统照片选择器；更低版本 AndroidX 会自动退回文档选择器。
                 val pickImages = androidx.activity.compose.rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+                    androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia()
                 ) { uris ->
                     if (uris.isNotEmpty()) {
                         cScope.launch {
@@ -277,7 +280,15 @@ fun SettingsScreen(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextButton(onClick = { runCatching { pickImages.launch(arrayOf("image/*")) } }) {
+                    TextButton(onClick = {
+                        runCatching {
+                            pickImages.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        }
+                    }) {
                         Text("选择图片上传")
                     }
                     TextButton(onClick = {
