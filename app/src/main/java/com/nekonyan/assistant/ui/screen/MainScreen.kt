@@ -527,6 +527,7 @@ enum class NekoRoute(val label: String) {
     PERSONA("人格"),
     MUSIC("音乐"),
     YOLO("YOLO 模型"),
+    ANNOTATE("标注"),
     PLUGIN("插件"),
     CONFIG("配置"),
     SETTINGS("设置"),

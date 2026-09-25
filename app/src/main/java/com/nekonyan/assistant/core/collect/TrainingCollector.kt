@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import com.nekonyan.assistant.core.log.NekoLog
 import com.nekonyan.assistant.core.security.BuiltinSecretStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -170,6 +171,39 @@ class TrainingCollector(private val context: Context) {
         }.getOrDefault(raw)
     }
 
+    // ---------------- 标注（在手机上修正预标注的框）----------------
+
+    /** 队列里的样本文件（按名字排序，保证"上一张/下一张"顺序稳定） */
+    fun pendingFiles(): List<File> =
+        dir.listFiles { f -> f.isFile && f.name.endsWith(".jpg") }?.sortedBy { it.name } ?: emptyList()
+
+    /** 标签文件（与图同名、同目录）：YOLO txt */
+    fun labelFileFor(image: File): File = File(image.parentFile, image.nameWithoutExtension + ".txt")
+
+    /** 读已有标签；没有则 null（标注页据此决定要不要跑预标注） */
+    fun readLabel(image: File): String? = runCatching {
+        val f = labelFileFor(image)
+        if (f.isFile) f.readText() else null
+    }.getOrNull()
+
+    /** 写标签。空字符串表示"这张图没有目标"——**保留这个文件**，它就是背景负样本 */
+    fun saveLabel(image: File, text: String): Boolean = runCatching {
+        labelFileFor(image).writeText(text)
+        true
+    }.getOrElse {
+        NekoLog.error(NekoLog.MODULE_PROJECTION, "annot_save_failed", it.javaClass.simpleName)
+        false
+    }
+
+    /** 还没标注过的样本（标注页打开时从这张开始） */
+    fun firstUnlabeled(): File? = pendingFiles().firstOrNull { readLabel(it) == null }
+
+    /** 已标注 / 总数（界面显示进度） */
+    fun labelProgress(): Pair<Int, Int> {
+        val all = pendingFiles()
+        return all.count { labelFileFor(it).isFile } to all.size
+    }
+
     /** 待传队列：张数与总字节（界面要显示，用户随时知道"还没传出去多少"） */
     fun pending(): Pair<Int, Long> {
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".jpg") } ?: return 0 to 0L
@@ -194,7 +228,7 @@ class TrainingCollector(private val context: Context) {
      * 地址与令牌**复用内置凭据**（与检测服务同一套）：不额外引入配置项，
      * 服务端只要在同一个 base 上实现 `POST /collect` 即可（见 docs/训练数据上传接口.md）。
      */
-    suspend fun uploadPending(maxPerRun: Int = 5, manual: Boolean = false): UploadResult = withContext(Dispatchers.IO) {
+    suspend fun uploadPending(maxPerRun: Int = 100, manual: Boolean = false): UploadResult = withContext(Dispatchers.IO) {
         val rules = rules()
         val wifi = onWifi()
         // 手动上传（点了"立即上传"或刚选完图）**不受自动采集开关与"仅 Wi-Fi"限制** ——
@@ -221,8 +255,12 @@ class TrainingCollector(private val context: Context) {
         var lastCode = 0
         for (f in files) {
             val r = runCatching {
+                // 标签一并送上去：服务端把 .txt 存在图旁边，拿到的就是**可直接训练的数据集**。
+                // 空标签也要送（那是"背景负样本"，对压误检很有价值，不能当没标过）
+                val label = runCatching { labelFileFor(f).readText() }.getOrNull()
                 val body = MultipartBody.Builder().setType(MultipartBody.FORM)
                     .addFormDataPart("source", f.name.substringAfterLast('_').removeSuffix(".jpg"))
+                    .addFormDataPart("label", label ?: "")
                     .addFormDataPart("image", f.name, f.asRequestBody("image/jpeg".toMediaType()))
                     .build()
                 val req = Request.Builder().url(url).header("X-API-Token", token).post(body).build()
@@ -241,6 +279,42 @@ class TrainingCollector(private val context: Context) {
         NekoLog.info(NekoLog.MODULE_PROJECTION, "collect_upload", msg)
         UploadResult(ok, failed, msg)
     }
+
+    /**
+     * 后台批量上传（**一次最多 100 张**）。
+     *
+     * 为什么不能直接用界面的协程作用域：标注页一次可能攒了上百张，
+     * 上传要几分钟，用户一退出页面 scope 就取消了 ✗ → 传一半、队列里剩一半且没有提示。
+     * 所以这里自带 scope，并用 [progress] 把进度告诉界面。
+     */
+    private val uploadScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO
+    )
+    private val _progress = kotlinx.coroutines.flow.MutableStateFlow("")
+    val progress: kotlinx.coroutines.flow.StateFlow<String> = _progress
+
+    fun startUpload(maxPerRun: Int = 100) {
+        uploadScope.launch {
+            if (_progress.value.isNotEmpty()) return@launch      // 已经在传了，别叠加
+            _progress.value = "准备上传…"
+            val (n, _) = pending()
+            var done = 0
+            try {
+                while (done < n) {
+                    val r = uploadPending(maxPerRun = minOf(100, n - done), manual = true)
+                    if (r.ok == 0) { _progress.value = r.message; return@launch }
+                    done += r.ok
+                    _progress.value = "已上传 $done / $n 张"
+                    if (r.failed > 0) { _progress.value = "已上传 $done / $n 张（${r.message}）"; return@launch }
+                }
+                _progress.value = "已全部上传（$done 张）"
+            } catch (e: Throwable) {
+                _progress.value = "上传中断：${e.javaClass.simpleName}"
+            }
+        }
+    }
+
+    fun clearProgress() { _progress.value = "" }
 
     /** 是否在 Wi-Fi 上（"仅 Wi-Fi 上传"靠它；拿不到状态时按"不是 Wi-Fi"处理，宁可不传） */
     fun onWifi(): Boolean = runCatching {

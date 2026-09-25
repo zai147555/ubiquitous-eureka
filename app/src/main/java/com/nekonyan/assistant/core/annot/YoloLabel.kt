@@ -78,6 +78,24 @@ object YoloLabel {
         )
     }
 
+    /**
+     * 图片按"完整显示"（fit）缩放后，在画布里的**实际显示矩形**。
+     *
+     * 手势坐标必须换算到这个矩形里 —— 否则图片上下留黑边（letterbox）时，
+     * 用户在图正中间画的框会落到标签里的偏上位置，且画面越"瘦长"偏得越多。
+     */
+    fun fitRect(imgW: Int, imgH: Int, viewW: Float, viewH: Float): PxRect {
+        if (imgW <= 0 || imgH <= 0 || viewW <= 0f || viewH <= 0f) {
+            return PxRect(0f, 0f, 0f, 0f)
+        }
+        val scale = minOf(viewW / imgW, viewH / imgH)
+        val w = imgW * scale
+        val h = imgH * scale
+        val left = (viewW - w) / 2f
+        val top = (viewH - h) / 2f
+        return PxRect(left, top, left + w, top + h)
+    }
+
     /** 命中测试：返回**最上层**（列表最后一个）包含该点的框下标；都不命中返回 null */
     fun hitTest(boxes: List<Box>, xPx: Float, yPx: Float, imgW: Int, imgH: Int): Int? {
         for (i in boxes.indices.reversed()) {

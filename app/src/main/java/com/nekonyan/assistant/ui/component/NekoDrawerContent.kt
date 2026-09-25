@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Memory
@@ -53,6 +54,7 @@ val NekoDrawerEntries: List<DrawerEntry> = listOf(
     DrawerEntry(NekoRoute.PERSONA, Icons.Filled.Person),
     DrawerEntry(NekoRoute.MUSIC, Icons.Filled.MusicNote),
     DrawerEntry(NekoRoute.YOLO, Icons.Filled.Memory),
+    DrawerEntry(NekoRoute.ANNOTATE, Icons.Filled.Edit),
     DrawerEntry(NekoRoute.PLUGIN, Icons.Filled.Extension),
     DrawerEntry(NekoRoute.CONFIG, Icons.Filled.Tune),
     DrawerEntry(NekoRoute.SETTINGS, Icons.Filled.Settings),

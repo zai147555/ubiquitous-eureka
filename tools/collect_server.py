@@ -44,6 +44,7 @@ def _check(token: str | None) -> None:
 @router.post("/collect")
 async def collect(
     source: str = Form("screen"),
+    label: str = Form(""),
     image: UploadFile = File(...),
     x_api_token: str | None = Header(default=None, alias="X-API-Token"),
 ):
@@ -68,8 +69,17 @@ async def collect(
         with open(path, "wb") as f:
             f.write(raw)
 
+    # 标签：App 端在手机上修正过预标注后，会随图一起把 YOLO txt 送上来。
+    # 存成同名 .txt（与图同目录）—— ultralytics 就是按"图旁边同名 txt"找标签的。
+    # 空字符串也要写：那表示"这张图没有目标"（背景负样本），是有价值的训练数据。
+    label_path = os.path.splitext(path)[0] + ".txt"
+    with open(label_path, "w", encoding="utf-8") as f:
+        f.write(label)
+
     total = sum(len(fs) for _, _, fs in os.walk(DATA_DIR))
-    return {"ok": True, "saved": os.path.relpath(path, DATA_DIR), "total": total}
+    labeled = sum(1 for r, _, fs in os.walk(DATA_DIR) for x in fs if x.endswith(".txt"))
+    return {"ok": True, "saved": os.path.relpath(path, DATA_DIR),
+            "labeled": bool(label.strip()) or label == "", "total": total, "labels": labeled}
 
 
 @router.get("/collect/stats")

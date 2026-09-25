@@ -247,8 +247,15 @@ fun SettingsScreen(
                 // 用**原生照片选择器**（QQ/微信调的就是它：九宫格 + 预览 +「原图」），
                 // 而不是 OpenMultipleDocuments —— 后者打开的是文件管理器界面，不像"发图片"。
                 // Android 13+ 走系统照片选择器；更低版本 AndroidX 会自动退回文档选择器。
+                // 一次最多 100 张；且不能超过系统允许的上限
+                // （超了 PickMultipleVisualMedia 的构造会直接抛异常 ✗）
+                val maxPick = remember {
+                    if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        minOf(100, android.provider.MediaStore.getPickImagesMaxLimit())
+                    } else 100
+                }
                 val pickImages = androidx.activity.compose.rememberLauncherForActivityResult(
-                    androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia()
+                    androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(maxPick)
                 ) { uris ->
                     if (uris.isNotEmpty()) {
                         cScope.launch {

@@ -18,6 +18,7 @@ import com.nekonyan.assistant.core.voice.VoicePipeline
 import com.nekonyan.assistant.data.repo.VoiceSettingsStore
 import com.nekonyan.assistant.core.perm.PermissionGuideStore
 import com.nekonyan.assistant.ui.component.PermissionGuideDialog
+import com.nekonyan.assistant.ui.screen.AnnotateScreen
 import com.nekonyan.assistant.ui.screen.ChatViewModel
 import com.nekonyan.assistant.ui.screen.ConfigScreen
 import com.nekonyan.assistant.ui.screen.KnowledgeScreen
@@ -202,6 +203,7 @@ fun NekoAppRoot() {
                 NekoRoute.PERSONA -> PersonaScreen(onBack = backToChat)
                 NekoRoute.MUSIC -> MusicScreen(onBack = backToChat)
                 NekoRoute.YOLO -> YoloModelScreen(onBack = backToChat)
+                NekoRoute.ANNOTATE -> AnnotateScreen(onBack = backToChat)
                 NekoRoute.PLUGIN -> PluginScreen(onBack = backToChat)
                 NekoRoute.CONFIG -> ConfigScreen(onBack = backToChat)
                 NekoRoute.SETTINGS -> SettingsScreen(
