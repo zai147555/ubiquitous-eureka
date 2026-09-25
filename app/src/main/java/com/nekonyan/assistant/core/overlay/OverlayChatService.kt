@@ -82,6 +82,9 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
 
     override fun onCreate() {
         super.onCreate()
+        // 每次尝试先清掉上一轮的错误；**本轮产生的错误要留到最后**：
+        // 曾经写成"成功启动后清空"，结果把刚记下的失败原因当场擦掉，用户仍然什么都看不到。
+        _lastError.value = null
         lifecycleRegistry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
         store = ViewModelStore()
         savedStateController = SavedStateRegistryController.create(this).apply { performRestore(null) }
@@ -92,7 +95,6 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
         attachOverlay()
         running = true
         _runningFlow.value = true
-        _lastError.value = null
         NekoLog.info(NekoLog.MODULE_UI, "overlay_started", "悬浮窗聊天已启动")
     }
 
