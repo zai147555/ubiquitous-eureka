@@ -192,6 +192,11 @@ class YoloServiceClient(private val baseClient: OkHttpClient = defaultClient()) 
             401, 403 -> "Token 不对或被拒绝（$code）"
             404 -> "路径不存在（404）：确认地址是 http://主机:8000"
             413 -> "图片太大（413）：接入指南建议压到 5MB 内"
+            // 530 单独说清楚：它是 Cloudflare 的回源错误，**不是 App 的问题**。
+            // 原来只显示"服务端错误（530）"，用户只能干瞪眼 —— 这次我们俩都被它绕过一圈。
+            530 -> "服务端 530：Cloudflare 连不上你的源站。若是 error code 1033，" +
+                "说明回源隧道（cloudflared）没在运行，去那台机器重启隧道即可；" +
+                "1016 则是源站域名解析失败。命名隧道是出站长连接，不用公网 IP、也不用改路由器。"
             in 500..599 -> "服务端错误（$code）"
             else -> "请求失败（$code）"
         }

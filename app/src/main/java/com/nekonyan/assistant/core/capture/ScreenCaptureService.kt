@@ -31,6 +31,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.nekonyan.assistant.core.yolo.NcnnDetector
 
@@ -186,6 +189,7 @@ class ScreenCaptureService : Service() {
         projection = proj
         running = true
         frames = 0; detects = 0
+        _status.value = CaptureStatus(running = true, stats = "已启动，等待第一帧…")
         NekoLog.info(NekoLog.MODULE_PROJECTION, "capture_started", "${w}x$h @ ${DETECT_INTERVAL_MS}ms")
     }
 
@@ -209,6 +213,7 @@ class ScreenCaptureService : Service() {
             "$name ${"%.0f".format(it.conf * 100)}%"
         } ?: "无检出"
         lastStats = "帧 $frames · 检出 $detects · 本帧 ${dets.size} 个 · 最高 $topText"
+        _status.value = CaptureStatus(running = true, stats = lastStats)
         if (frames % 10 == 0) {
             NekoLog.info(NekoLog.MODULE_PROJECTION, "capture_stats", lastStats)
         }
@@ -279,6 +284,7 @@ class ScreenCaptureService : Service() {
 
     private fun stopCapture() {
         running = false
+        _status.value = CaptureStatus(running = false, stats = "未运行")
         runCatching { virtualDisplay?.release() }
         runCatching { reader?.close() }
         runCatching { projection?.stop() }
@@ -304,6 +310,15 @@ class ScreenCaptureService : Service() {
 
         @Volatile var lastStats: String = "未运行"
             private set
+
+        /** 抓屏状态（给界面观察）。
+         *
+         * 为什么要这条流：原来页面靠"局部状态 + 轮询"显示状态，而**授权回调里从不把
+         * 局部状态置 true** —— 结果抓屏真的在跑，页面却一直显示"未运行"、「停止」
+         * 按钮一直灰着、用户根本停不掉。状态只有一个来源（服务自己）才不会这样。
+         */
+        private val _status = MutableStateFlow(CaptureStatus(running = false, stats = "未运行"))
+        val status: StateFlow<CaptureStatus> = _status.asStateFlow()
 
         fun start(context: Context, resultCode: Int, data: Intent) {
             val i = Intent(context, ScreenCaptureService::class.java).apply {
@@ -340,3 +355,6 @@ class ScreenCaptureService : Service() {
         }
     }
 }
+
+/** 抓屏状态快照（[ScreenCaptureService.status] 用） */
+data class CaptureStatus(val running: Boolean, val stats: String)

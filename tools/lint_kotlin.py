@@ -62,7 +62,9 @@ AMBIGUOUS = {
     "cancel": ("kotlinx.coroutines.cancel",
                re.compile(r"\b(\w*[Ss]cope\w*)\s*\.\s*cancel\s*\(")),
     "launch": ("kotlinx.coroutines.launch",
-               re.compile(r"\b(\w*[Ss]cope\w*)\s*\.\s*launch\s*[({]")),
+               # receiver 像 scope 且**不像启动器**：pickImage.launch(...) 这类
+               # Activity Result 启动器是成员函数，不需要 import（曾误报 4 处）
+               re.compile(r"\b(?!\w*[Ll]auncher)(\w*[Ss]cope)\s*\.\s*launch\s*[({]")),
 }
 
 def strip_comments(src: str) -> str:

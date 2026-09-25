@@ -311,22 +311,19 @@ fun YoloModelScreen(
             SectionTitle("屏幕捕获（M4 · 本地识别）")
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    var capturing by remember { mutableStateOf(ScreenCaptureService.running) }
-                    var stats by remember { mutableStateOf(ScreenCaptureService.lastStats) }
-                    LaunchedEffect(capturing) {
-                        while (capturing) {
-                            stats = ScreenCaptureService.lastStats
-                            capturing = ScreenCaptureService.running
-                            kotlinx.coroutines.delay(1000)
-                        }
-                    }
+                    // ★ 只认服务自己的状态。
+                    //   原来用页面局部状态 + LaunchedEffect(capturing) 轮询，而**授权回调
+                    //   从不把 capturing 置 true** → 抓屏真的在跑，页面却一直显示"未运行"、
+                    //   「停止」按钮永远灰着、用户停不掉。状态只有一个来源就不会这样。
+                    val cap by ScreenCaptureService.status.collectAsStateWithLifecycle()
+                    val capturing = cap.running
                     Text(
                         "授权后由前台服务抓屏并本地跑模型（约 2 帧/秒，实测约 234ms/帧）。" +
                             "系统每次开始捕获都要现场确认 —— 安卓不允许预先授权屏幕录制。",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
-                        "状态：" + if (capturing) stats else "未运行",
+                        "状态：" + if (capturing) cap.stats else "未运行",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (capturing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -339,7 +336,7 @@ fun YoloModelScreen(
                             enabled = !capturing
                         ) { Text("开始捕获") }
                         OutlinedButton(
-                            onClick = { ScreenCaptureService.stop(ctx); capturing = false },
+                            onClick = { ScreenCaptureService.stop(ctx) },
                             enabled = capturing
                         ) { Text("停止") }
                     }
