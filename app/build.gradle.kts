@@ -13,11 +13,25 @@ android {
         applicationId = "com.nekonyan.assistant"
         minSdk = 31            // 需求：Android 12+（API 31+）
         targetSdk = 35
-        versionCode = 38
-        versionName = "0.26.4"
+        versionCode = 39
+        versionName = "0.26.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared") } }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_shared")
+                // CI 上 NDK 编译是耗时大头（那份 8.99MB 的 arm64 .so 每次都重编）。
+                // GitHub 的 ubuntu runner 自带 ccache，声明 launcher 后二次编译能压到几秒。
+                // **只在它真的存在时启用**：否则会在缺 ccache 的环境里直接构建失败。
+                val ccache = File("/usr/bin/ccache")
+                if (ccache.exists()) {
+                    arguments += listOf(
+                        "-DCMAKE_C_COMPILER_LAUNCHER=$ccache",
+                        "-DCMAKE_CXX_COMPILER_LAUNCHER=$ccache"
+                    )
+                }
+            }
+        }
         vectorDrawables { useSupportLibrary = true }
 
         // 需求：多 ABI（有 native 代码时才生效）
@@ -31,6 +45,9 @@ android {
             isMinifyEnabled = false
         }
         release {
+            // 用 debug 签名：目的是**能装上做性能对比**（release 与 debug 的流畅度差距是成倍的）。
+            // 正式对外发布应换成正式 keystore —— 那时再走 secrets 注入。
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
