@@ -141,17 +141,19 @@ class TrainingCollector(private val context: Context) {
         val rules = rules()
         val wifi = onWifi()
         val gate = CollectPolicy.shouldUploadNow(rules, wifi)
-        if (gate is CollectPolicy.Decision.Skip) return UploadResult(0, 0, gate.reason)
+        // withContext 的 lambda 不是 inline —— 裸 return 非法（CI 直接报 'return' is prohibited here）
+        if (gate is CollectPolicy.Decision.Skip) return@withContext UploadResult(0, 0, gate.reason)
 
         val creds = BuiltinSecretStore.load(context)
-            ?: return UploadResult(0, 0, "内置凭据里没有服务地址，无法上传")
+            ?: return@withContext UploadResult(0, 0, "内置凭据里没有服务地址，无法上传")
         val (base, token) = creds
         val url = base.trimEnd('/') + "/collect"
 
-        val files = (dir.listFiles { f -> f.isFile && f.name.endsWith(".jpg") } ?: return UploadResult(0, 0, "队列为空"))
+        val files = (dir.listFiles { f -> f.isFile && f.name.endsWith(".jpg") }
+            ?: return@withContext UploadResult(0, 0, "队列为空"))
             .sortedBy { it.name }
             .take(maxPerRun)
-        if (files.isEmpty()) return UploadResult(0, 0, "队列为空")
+        if (files.isEmpty()) return@withContext UploadResult(0, 0, "队列为空")
 
         var ok = 0
         var failed = 0
@@ -176,7 +178,7 @@ class TrainingCollector(private val context: Context) {
         }
         val msg = if (failed == 0) "已上传 $ok 张" else "上传 $ok 张后失败（HTTP $lastCode）"
         NekoLog.info(NekoLog.MODULE_PROJECTION, "collect_upload", msg)
-        return UploadResult(ok, failed, msg)
+        UploadResult(ok, failed, msg)
     }
 
     /** 是否在 Wi-Fi 上（"仅 Wi-Fi 上传"靠它；拿不到状态时按"不是 Wi-Fi"处理，宁可不传） */
