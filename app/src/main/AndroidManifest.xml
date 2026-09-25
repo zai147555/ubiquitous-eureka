@@ -28,8 +28,18 @@
     <uses-permission android:name="android.permission.BATTERY_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <!--
+        为什么必须允许明文 HTTP：
+          自建 YOLO 检测服务是**用户自己填地址**的局域网服务，接入指南给的示例就是
+          http://主机:8000。而 targetSdk 28+ 默认禁止明文，OkHttp 会直接抛
+          "CLEARTEXT communication to ... not permitted by network security policy" ——
+          表现就是"地址填对了却一直失败"。
+        App 自己控制的链路（DeepSeek、模型热更新、Edge TTS）仍然全是 HTTPS，
+        不因为这一项而放宽。
+    -->
     <application
         android:name=".NekoApp"
+        android:usesCleartextTraffic="true"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
