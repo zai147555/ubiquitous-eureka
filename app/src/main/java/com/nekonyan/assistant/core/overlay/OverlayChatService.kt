@@ -95,12 +95,23 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
         // 每次尝试先清掉上一轮的错误；**本轮产生的错误要留到最后**：
         // 曾经写成"成功启动后清空"，结果把刚记下的失败原因当场擦掉，用户仍然什么都看不到。
         _lastError.value = null
-        // 用户实测"开悬浮窗直接闪退"：与其猜是哪一步抛，不如**任何一步抛都别崩**，
+        // ★ 进前台放在**最前面**：本服务由 startForegroundService 启动，
+        //   若在系统超时前没调到 startForeground，会抛
+        //   ForegroundServiceDidNotStartInTimeException 直接把进程杀掉 ——
+        //   于是"后面任何一步失败"都会表现成另一种闪退（真机上就是这么演化的）。
+        val fgError = startForegroundSafely()
+        // 其余步骤整段兜底：与其猜哪一步抛，不如**任何一步抛都别崩**，
         // 把异常类名+位置显示到设置页，让故障自己说话。
         try {
-        lifecycleRegistry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
+        // ★ 顺序不能变（真机崩溃栈换来的）：
+        //   performRestore() 内部会先调 performAttach()，而它要求
+        //   `owner.lifecycle.currentState == INITIALIZED`，否则抛
+        //   "Restarter must be created only during owner's initialization stage"。
+        //   踩过的错：先把 lifecycle 推到 RESUMED 再 performRestore → 服务一创建就崩。
+        lifecycleRegistry = LifecycleRegistry(this)
         store = ViewModelStore()
         savedStateController = SavedStateRegistryController.create(this).apply { performRestore(null) }
+        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         wm = getSystemService(WindowManager::class.java)
         // 独立实例：Service 比 Activity 活得久，不能引用界面那个（会被清掉）
         chatVm = ViewModelProvider(this, ChatViewModel.Factory)[ChatViewModel::class.java]
@@ -108,10 +119,11 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
         uiScope.launch {
             runCatching { ThemeStore(NekoApp.context()).settings.collect { appearanceState.value = it } }
         }
-        startForegroundSafely()
         attachOverlay()
         running = true
         _runningFlow.value = true
+        // 进前台失败不致命（悬浮窗本身不需要前台身份），但要如实告诉用户
+        if (fgError != null) _lastError.value = fgError
         NekoLog.info(NekoLog.MODULE_UI, "overlay_started", "悬浮窗聊天已启动")
         } catch (t: Throwable) {
             // 连 cause 一起带上：有些 ROM 把真实原因包在 cause 里
