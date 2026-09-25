@@ -29,6 +29,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -171,6 +174,86 @@ fun SettingsScreen(
                     checked = appearance.colorBlindFriendly,
                     onCheckedChange = { themeVm.setColorBlindFriendly(it) }
                 )
+            }
+
+            // ---------------- 训练数据采集 ----------------
+            GroupTitle("训练数据采集")
+            SettingBlock("采集屏幕样本（给模型训练用）") {
+                val cCtx = androidx.compose.ui.platform.LocalContext.current
+                val collector = remember { com.nekonyan.assistant.core.collect.TrainingCollector(cCtx) }
+                var rules by remember { mutableStateOf(collector.rules()) }
+                var info by remember { mutableStateOf("") }
+                var actionMsg by remember { mutableStateOf<String?>(null) }
+                val cScope = rememberCoroutineScope()
+
+                fun refresh() {
+                    val (n, bytes) = collector.pending()
+                    val u = collector.usage()
+                    info = "今日已采 ${u.todayCount} 张 / ${u.todayBytes / 1024 / 1024}MB · " +
+                        "待传 $n 张 / ${bytes / 1024}KB" +
+                        if (collector.onWifi()) " · 当前 Wi-Fi" else " · 当前非 Wi-Fi"
+                }
+                LaunchedEffect(Unit) { refresh() }
+
+                SwitchRow(
+                    title = "采集屏幕样本（默认关闭，需你主动开启）",
+                    checked = rules.enabled,
+                    onCheckedChange = { on ->
+                        rules = rules.copy(enabled = on)
+                        collector.saveRules(rules)
+                        actionMsg = if (on) "已开启：按下面的间隔采样，计数会显示在这里" else "已关闭采集"
+                        refresh()
+                    }
+                )
+                Text(
+                    "采样的是**屏幕画面**（可能含聊天记录等私密内容），会攒在手机本地，再上传到你自建的 " +
+                        "POST /collect；默认仅 Wi-Fi 上传、每日有张数与流量上限、相邻画面自动去重。" +
+                        "想彻底停就关掉这个开关，随时可清空待传。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+                Text("采样间隔", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(10_000L to "10 秒", 30_000L to "30 秒", 60_000L to "1 分钟", 300_000L to "5 分钟")
+                        .forEach { (ms, label) ->
+                            FilterChip(
+                                selected = rules.intervalMs == ms,
+                                onClick = {
+                                    rules = rules.copy(intervalMs = ms)
+                                    collector.saveRules(rules)
+                                },
+                                label = { Text(label) }
+                            )
+                        }
+                }
+                SwitchRow(
+                    title = "仅 Wi-Fi 上传（移动网络下只攒不传）",
+                    checked = rules.wifiOnly,
+                    onCheckedChange = { on ->
+                        rules = rules.copy(wifiOnly = on)
+                        collector.saveRules(rules)
+                    }
+                )
+                Text(info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                actionMsg?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = {
+                        cScope.launch {
+                            actionMsg = "上传中…"
+                            val r = collector.uploadPending()
+                            actionMsg = r.message
+                            refresh()
+                        }
+                    }) { Text("立即上传") }
+                    TextButton(onClick = {
+                        val n = collector.clearPending()
+                        actionMsg = "已清空 $n 张待传样本"
+                        refresh()
+                    }) { Text("清空待传") }
+                }
             }
 
             // ---------------- 悬浮窗 ----------------

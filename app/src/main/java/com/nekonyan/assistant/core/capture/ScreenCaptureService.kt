@@ -24,7 +24,14 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import com.nekonyan.assistant.R
+import com.nekonyan.assistant.core.collect.CollectPolicy
+import com.nekonyan.assistant.core.collect.TrainingCollector
 import com.nekonyan.assistant.core.log.NekoLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import com.nekonyan.assistant.core.yolo.NcnnDetector
 
 /**
@@ -60,6 +67,16 @@ class ScreenCaptureService : Service() {
      * 延迟约等于一个 vsync，不需要为取帧再开一条抓屏链路。
      */
     @Volatile private var grabWaiter: CompletableDeferred<Bitmap?>? = null
+
+    /**
+     * 训练数据采集（**默认关闭**，开关与计数在界面/通知里都可见）。
+     * 采样按 [CollectPolicy] 的间隔与每日上限来，绝不逐帧上传。
+     */
+    private val collector by lazy { TrainingCollector(this) }
+
+    /** 只用于后台上传，避免占用抓屏线程 */
+    private val uploadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var lastUploadAtMs = 0L
     private var thread: HandlerThread? = null
     private var handler: Handler? = null
     private var lastDetectAt = 0L
@@ -195,7 +212,52 @@ class ScreenCaptureService : Service() {
         if (frames % 10 == 0) {
             NekoLog.info(NekoLog.MODULE_PROJECTION, "capture_stats", lastStats)
         }
+        // 训练数据采样（默认关闭；间隔/上限/去重都在 CollectPolicy 里判定）
+        maybeCollect(bitmap)
         bitmap.recycle()
+    }
+
+    /**
+     * 按策略决定这一刻要不要留一张样本。
+     *
+     * 用 9x8 灰度算 64 位 dHash 做**近似去重**：抓屏相邻帧几乎一样，
+     * 不去重的话队列里全是同一画面（既占用户空间，也把训练集带偏）。
+     */
+    private fun maybeCollect(bitmap: Bitmap) {
+        val c = collector
+        val rules = c.rules()
+        if (!rules.enabled) return
+        runCatching {
+            val hash = CollectPolicy.dHash(lumaOf(bitmap), LUMA_W, LUMA_H)
+            val now = System.currentTimeMillis()
+            val decision = CollectPolicy.shouldCapture(rules, c.usage(), now, hash)
+            if (decision !is CollectPolicy.Decision.Capture) return@runCatching
+            val bos = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bos)
+            if (c.enqueue(bos.toByteArray(), hash, "screen", now)) {
+                val (n, bytes) = c.pending()
+                lastStats = lastStats + " · 待传 $n 张/${bytes / 1024}KB"
+            }
+            // 每 2 分钟尝试补传一次（断网/隧道挂掉时不丢样本，恢复后自动传）
+            if (now - lastUploadAtMs > 120_000L) {
+                lastUploadAtMs = now
+                uploadScope.launch { c.uploadPending() }
+            }
+        }.onFailure {
+            NekoLog.warn(NekoLog.MODULE_PROJECTION, "collect_sample_failed", it.javaClass.simpleName)
+        }
+    }
+
+    /** 缩到 9x8 灰度算 dHash（9 宽 → 每行 8 次比较，8 行正好 64 位） */
+    private fun lumaOf(src: Bitmap, w: Int = LUMA_W, h: Int = LUMA_H): IntArray {
+        val small = Bitmap.createScaledBitmap(src, w, h, true)
+        val px = IntArray(w * h)
+        small.getPixels(px, 0, w, 0, 0, w, h)
+        if (small !== src) small.recycle()
+        return IntArray(w * h) { i ->
+            val p = px[i]
+            (((p shr 16) and 0xFF) * 299 + ((p shr 8) and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
+        }
     }
 
     /** Image(RGBA_8888) → Bitmap：按 rowStride 建图再裁 padding，避免画面斜切 */
@@ -220,11 +282,15 @@ class ScreenCaptureService : Service() {
         runCatching { virtualDisplay?.release() }
         runCatching { reader?.close() }
         runCatching { projection?.stop() }
+        runCatching { uploadScope.cancel() }
         virtualDisplay = null; reader = null; projection = null
         thread?.quitSafely(); thread = null; handler = null
     }
 
     companion object {
+        private const val LUMA_W = 9
+        private const val LUMA_H = 8
+
         @Volatile private var instance: ScreenCaptureService? = null
 
         const val ACTION_START = "com.nekonyan.assistant.capture.START"
