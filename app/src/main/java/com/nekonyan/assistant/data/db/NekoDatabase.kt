@@ -11,6 +11,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.nekonyan.assistant.core.util.NekoMode
 
+/** 数据库版本（注解与升级守卫**共用同一个常量**，避免只改一处） */
+internal const val NEKO_DB_VERSION = 3
+
 /**
  * 应用数据库。
  *
@@ -35,7 +38,7 @@ import com.nekonyan.assistant.core.util.NekoMode
         // M15：声明式插件登记
         PluginRecordEntity::class
     ],
-    version = 3,
+    version = NEKO_DB_VERSION,
     // 关闭 schema 导出：本工程尚无迁移需求。开启时需要确保 schemas/ 目录
     // 已存在且随仓库提交，否则 Room 会报 "Empty schema file"（CI 上踩过这个坑）。
     // 将来做数据库迁移时：改成 true + ksp arg room.schemaLocation + 提交 app/schemas/。
@@ -74,8 +77,13 @@ abstract class NekoDatabase : RoomDatabase() {
                 instance ?: build(context.applicationContext).also { instance = it }
             }
 
-        private fun build(context: Context): NekoDatabase =
-            Room.databaseBuilder(context, NekoDatabase::class.java, DB_NAME)
+        private fun build(context: Context): NekoDatabase {
+            // ★ 位置是关键：必须在 databaseBuilder 之前。
+            //   本项目用 fallbackToDestructiveMigration —— 表结构一变就重建库，
+            //   一旦 Room 打开并重建完成，旧数据就再也回不来了。
+            //   这里先把旧库整份备份到 filesDir/db_backup/，重建归重建，数据还在。
+            DbUpgradeGuard.backupIfOutdated(context, NEKO_DB_VERSION)
+            return Room.databaseBuilder(context, NekoDatabase::class.java, DB_NAME)
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 // v1 → v2 只是**新增**了 YOLO 模型管理的 8 张表。
                 // 手写迁移的 SQL 必须与 Room 生成的建表语句逐字节一致，写错的表现是
@@ -84,6 +92,7 @@ abstract class NekoDatabase : RoomDatabase() {
                 // 上线前若要保数据：开启 exportSchema + 提交 schemas/ + 写正式 Migration。
                 .fallbackToDestructiveMigration()
                 .build()
+        }
 
         /**
          * 首启种子数据，幂等（可重复调用，不会重复插入）。
