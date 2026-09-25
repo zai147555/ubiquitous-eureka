@@ -205,6 +205,35 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
+
+                // 悬浮窗依赖系统侧开关，失败时必须让用户看到原因（否则就是"点了没反应"）
+                val ovError by com.nekonyan.assistant.core.overlay.OverlayChatService
+                    .lastError.collectAsStateWithLifecycle()
+                ovError?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+
+                var checks by remember {
+                    mutableStateOf<List<Pair<String, Boolean>>?>(null)
+                }
+                TextButton(onClick = {
+                    checks = com.nekonyan.assistant.core.overlay.OverlayChatService.selfCheck(ovCtx)
+                }) { Text("悬浮窗自检") }
+                checks?.let { list ->
+                    list.forEach { (name, ok) ->
+                        Text(
+                            (if (ok) "✓ " else "✗ ") + name,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (ok) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
             }
 
             // ---------------- 语音朗读 ----------------

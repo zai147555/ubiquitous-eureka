@@ -92,6 +92,7 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
         attachOverlay()
         running = true
         _runningFlow.value = true
+        _lastError.value = null
         NekoLog.info(NekoLog.MODULE_UI, "overlay_started", "悬浮窗聊天已启动")
     }
 
@@ -121,7 +122,13 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
 
     // ---------------- 窗口 ----------------
 
-    private fun startForegroundSafely() {
+    /**
+     * 进前台。**绝不抛异常**：FGS 类型/通知权限在部分 ROM 上会直接抛
+     * （MissingForegroundServiceTypeException / SecurityException），
+     * 一抛就是进程崩溃 —— 表现是"点了开关什么都没发生"。
+     * 进不了前台也继续把窗口加上：悬浮窗本身不需要前台身份，能显示就先显示。
+     */
+    private fun startForegroundSafely(): String? = runCatching {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CHANNEL_ID) == null) {
             nm.createNotificationChannel(
@@ -145,6 +152,11 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
         } else {
             startForeground(NOTIF_ID, notif)
         }
+        null
+    }.getOrElse { e ->
+        val msg = "进前台失败（${e.javaClass.simpleName}）：${e.message?.take(120)}"
+        NekoLog.warn(NekoLog.MODULE_UI, "overlay_foreground_failed", msg)
+        msg
     }
 
     private fun attachOverlay() {
@@ -204,13 +216,48 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
                 }
             }
         }
-        runCatching {
-            wm.addView(view, p)
-            overlayView = view
-            params = p
-        }.onFailure {
-            NekoLog.error(NekoLog.MODULE_UI, "overlay_add_failed", it.javaClass.simpleName + ": " + it.message)
-            stopSelf()
+        if (!tryAdd(view, p)) {
+            // 有些 ROM 在刚授权后需要一小会儿才放行，重试一次再报错
+            NekoLog.warn(NekoLog.MODULE_UI, "overlay_add_retry", "首次加窗口失败，400ms 后重试")
+            android.os.Handler(mainLooper).postDelayed({
+                if (!tryAdd(view, p)) {
+                    reportAddFailure()
+                    stopSelf()
+                }
+            }, 400)
+        }
+    }
+
+    /** @return 是否成功加进窗口 */
+    private fun tryAdd(view: ComposeView, p: WindowManager.LayoutParams): Boolean = runCatching {
+        wm.addView(view, p)
+        overlayView = view
+        params = p
+        true
+    }.getOrElse { e ->
+        val raw = "${e.javaClass.simpleName}: ${e.message?.take(160)}"
+        NekoLog.error(NekoLog.MODULE_UI, "overlay_add_failed", raw)
+        _lastError.value = hint(raw)
+        false
+    }
+
+    /**
+     * 把"系统把它拦了"翻译成用户能照做的一句话。
+     * 国内 ROM 除「显示在其他应用上层」外，普遍还有一道「后台弹出界面」开关，
+     * 只报 BadTokenException 用户根本无从下手。
+     */
+    private fun hint(raw: String): String = when {
+        raw.contains("BadToken", true) || raw.contains("permission", true) ->
+            "系统拦截了悬浮窗（$raw）。请到系统设置里允许本应用「后台弹出界面 / 显示弹窗 / 后台显示界面」，" +
+                "小米、OPPO、vivo 常见此项；授权后回到设置页重新打开开关即可。"
+        else -> "悬浮窗添加失败：$raw"
+    }
+
+    /** 失败要把状态告诉界面：开关要回弹，并且给出可照做的原因 */
+    private fun reportAddFailure() {
+        NekoLog.error(NekoLog.MODULE_UI, "overlay_give_up", "两次加窗口都失败，已停止悬浮窗服务")
+        if (_lastError.value.isNullOrBlank()) {
+            _lastError.value = "悬浮窗没能显示：系统未放行。请检查「显示在其他应用上层」与「后台弹出界面」权限。"
         }
     }
 
@@ -281,6 +328,24 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
          */
         private val _runningFlow = MutableStateFlow(false)
         val runningFlow: StateFlow<Boolean> = _runningFlow.asStateFlow()
+
+        /** 最近一次失败原因（给设置页显示；成功后清空） */
+        private val _lastError = MutableStateFlow<String?>(null)
+        val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+        fun clearError() { _lastError.value = null }
+
+        /**
+         * 自检：把"为什么没显示"拆成能逐条看的检查项。
+         * 悬浮窗依赖系统侧开关，报一句"失败了"用户没法查，所以这里逐项给出结果。
+         */
+        fun selfCheck(context: Context): List<Pair<String, Boolean>> = listOf(
+            "上层显示权限（显示在其他应用上层）" to canDraw(context),
+            "通知权限（前台常驻通知）" to (Build.VERSION.SDK_INT < 33 ||
+                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED),
+            "悬浮窗服务正在运行" to running
+        )
 
         /** 是否已授权「显示在其他应用上层」 */
         fun canDraw(context: Context): Boolean = android.provider.Settings.canDrawOverlays(context)
