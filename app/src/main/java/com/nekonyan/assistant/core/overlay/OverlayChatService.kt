@@ -43,6 +43,10 @@ import com.nekonyan.assistant.core.log.NekoLog
 import com.nekonyan.assistant.data.repo.AppearanceSettings
 import com.nekonyan.assistant.data.repo.ThemeStore
 import com.nekonyan.assistant.ui.screen.ChatViewModel
+import com.nekonyan.assistant.core.voice.AutoSpeakDecision
+import com.nekonyan.assistant.core.voice.AutoSpeakPolicy
+import com.nekonyan.assistant.core.voice.VoicePipeline
+import com.nekonyan.assistant.data.repo.VoiceSettingsStore
 import com.nekonyan.assistant.ui.theme.NekoTheme
 
 /**
@@ -79,10 +83,32 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
     /** 主题：在 onCreate 里从 DataStore 读进 state，组合里只读 state（组合里碰 DataStore 崩了没法兜） */
     private val appearanceState = mutableStateOf(AppearanceSettings())
 
-    /** 只用于把主题读进 state；随服务销毁取消 */
+    /** 只用于把主题读进 state、听回复自动朗读；随服务销毁取消 */
     private val uiScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate
     )
+
+    /** 面板尺寸（px）：用户拖右下角把手改，持久化在 OverlayPrefs */
+    private val panelW = mutableStateOf(0)
+    private val panelH = mutableStateOf(0)
+
+    private lateinit var prefs: OverlayPrefs
+    private var resizeStartW = 0
+    private var resizeStartH = 0
+    private var resizeAccX = 0f
+    private var resizeAccY = 0f
+
+    /**
+     * 语音：**悬浮窗自己也要能出声**。
+     *
+     * 主界面那条朗读链路挂在 Activity 的组合上，App 在后台时 collectAsStateWithLifecycle
+     * 会停止收集 —— 而"人在别的 App 里、通过悬浮窗聊天"恰恰是这个功能的主场景。
+     * 所以服务里单独持有一条 [VoicePipeline]。
+     */
+    private val voice by lazy { VoicePipeline(this) }
+    private val voiceStore by lazy { VoiceSettingsStore(this) }
+    private val lastSpokenId = mutableStateOf<String?>(null)
+    private val autoSpeakReady = mutableStateOf(false)
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -115,6 +141,31 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
         wm = getSystemService(WindowManager::class.java)
         // 独立实例：Service 比 Activity 活得久，不能引用界面那个（会被清掉）
         chatVm = ViewModelProvider(this, ChatViewModel.Factory)[ChatViewModel::class.java]
+        prefs = OverlayPrefs(this)
+        val dm0 = resources.displayMetrics
+        panelW.value = prefs.panelWidth().takeIf { it > 0 } ?: (300 * dm0.density).toInt()
+        panelH.value = prefs.panelHeight().takeIf { it > 0 } ?: (420 * dm0.density).toInt()
+        voice.init { }
+        // 自动朗读：复用主界面同一套判定（AutoSpeakPolicy，纯函数 + 单测）
+        uiScope.launch {
+            chatVm?.state?.collect { st ->
+                val lastAi = st.messages.lastOrNull { !it.fromUser && it.text.isNotBlank() }
+                    ?: return@collect
+                val d = AutoSpeakPolicy.decide(
+                    baselineReady = autoSpeakReady.value,
+                    seenId = lastSpokenId.value,
+                    newId = lastAi.id,
+                    newText = lastAi.text,
+                    enabled = voiceStore.autoSpeak()
+                )
+                autoSpeakReady.value = true
+                when (d) {
+                    is AutoSpeakDecision.Speak -> { lastSpokenId.value = d.id; speak(d.text) }
+                    is AutoSpeakDecision.Remember -> lastSpokenId.value = d.id
+                    AutoSpeakDecision.Ignore -> Unit
+                }
+            }
+        }
         // 主题在组合之外读一次；失败也不影响气泡显示（退回默认主题）
         uiScope.launch {
             runCatching { ThemeStore(NekoApp.context()).settings.collect { appearanceState.value = it } }
@@ -158,6 +209,7 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
     }
 
     override fun onDestroy() {
+        runCatching { voice.release() }
         runCatching { uiScope.cancel() }
         running = false
         _runningFlow.value = false
@@ -222,8 +274,11 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (dm.widthPixels - 72 * dm.density).toInt().coerceAtLeast(0)
-            y = (dm.heightPixels * 0.35f).toInt()
+            // 记住用户把气泡放在哪（没存过才用默认位置）
+            x = prefs.bubbleX().takeIf { it != Int.MIN_VALUE }
+                ?: (dm.widthPixels - 72 * dm.density).toInt().coerceAtLeast(0)
+            y = prefs.bubbleY().takeIf { it != Int.MIN_VALUE }
+                ?: (dm.heightPixels * 0.35f).toInt()
         }
 
         val view = ComposeView(this).apply {
@@ -244,13 +299,19 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
                         if (expanded.value) {
                             OverlayPanel(
                                 chat = chat,
+                                panelWpx = panelW.value,
+                                panelHpx = panelH.value,
                                 onSend = { vm.send(it) },
                                 onStop = { vm.stop() },
                                 onCollapse = { setExpanded(false) },
                                 onClose = { stopSelf() },
                                 onAnswerConfirm = { vm.answerConfirm(it) },
+                                onSpeak = { speak(it) },
                                 onDrag = { dx, dy -> moveBy(dx, dy) },
-                                onDragEnd = { snapToEdge() }
+                                onDragEnd = { snapToEdge() },
+                                onResizeStart = { beginResize() },
+                                onResize = { dx, dy -> resizeBy(dx, dy) },
+                                onResizeEnd = { endResize() }
                             )
                         } else {
                             OverlayBubble(
@@ -324,8 +385,17 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
             WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
         }
         runCatching { wm.updateViewLayout(v, p) }
-        // 面板比气泡大得多：等布局完再夹一次，否则展开后可能半个面板在屏幕外
-        v.post { reclamp() }
+        // 等布局完再处理位置：
+        //   展开 → 面板比气泡大得多，不夹一次可能半个面板在屏幕外；
+        //   收起 → **每次都吸附到最近的左右边缘**（用户要求：缩小时贴边），
+        //          否则面板挪过之后气泡可能停在屏幕中间，挡内容又不好点。
+        v.post {
+            reclamp()
+            if (!e) {
+                snapToEdge()
+                prefs.saveBubblePos(p.x, p.y)
+            }
+        }
     }
 
     private fun moveBy(dx: Float, dy: Float) {
@@ -345,6 +415,44 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
         val p = params ?: return
         p.x = OverlayGeometry.snapToEdge(p.x, v.width, resources.displayMetrics.widthPixels)
         runCatching { wm.updateViewLayout(v, p) }
+        runCatching { prefs.saveBubblePos(p.x, p.y) }
+    }
+
+    // ---------------- 缩放 ----------------
+
+    /** 开始拖右下角把手：记下起始尺寸（用"起始+累计位移"算，手指抖动不会越积越偏） */
+    fun beginResize() {
+        resizeStartW = panelW.value
+        resizeStartH = panelH.value
+        resizeAccX = 0f
+        resizeAccY = 0f
+    }
+
+    fun resizeBy(dx: Float, dy: Float) {
+        resizeAccX += dx
+        resizeAccY += dy
+        val dm = resources.displayMetrics
+        val (w, h) = OverlayGeometry.resize(
+            resizeStartW, resizeStartH, resizeAccX, resizeAccY, dm.widthPixels, dm.heightPixels
+        )
+        panelW.value = w
+        panelH.value = h
+    }
+
+    fun endResize() {
+        prefs.savePanelSize(panelW.value, panelH.value)
+        reclamp()
+    }
+
+    // ---------------- 朗读 ----------------
+
+    /** 念一段文字（工具栏按钮与自动朗读都走这里） */
+    fun speak(text: String) {
+        if (text.isBlank()) return
+        uiScope.launch {
+            val msg = voice.speak(text, voiceStore.load())
+            NekoLog.info(NekoLog.MODULE_UI, "overlay_speak", msg)
+        }
     }
 
     private fun reclamp() {

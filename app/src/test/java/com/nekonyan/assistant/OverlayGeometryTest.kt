@@ -55,6 +55,27 @@ class OverlayGeometryTest {
     }
 
     @Test
+    fun resize_clamps_to_min_so_input_stays_usable() {
+        // 往下/往左猛拖：不能缩到没法打字（下限）
+        val (w, h) = OverlayGeometry.resize(300, 400, -5000f, -5000f, 1080, 2400)
+        assertEquals(OverlayGeometry.MIN_PANEL_W to OverlayGeometry.MIN_PANEL_H, w to h)
+    }
+
+    @Test
+    fun resize_clamps_to_screen_max() {
+        // 往右下猛拖：不能超出屏幕（上限复用 panelSize）
+        val (w, h) = OverlayGeometry.resize(300, 400, 5000f, 5000f, 1080, 2400)
+        assertTrue("宽度不超 92% 屏宽：$w", w <= (1080 * 0.92f).toInt())
+        assertTrue("高度不超 72% 屏高：$h", h <= (2400 * 0.72f).toInt())
+    }
+
+    @Test
+    fun resize_follows_small_deltas_without_drift() {
+        // 起始 600x800，累计 +50/+60 → 650x860（用"起始+累计"而不是逐帧增量，不会漂）
+        assertEquals(650 to 860, OverlayGeometry.resize(600, 800, 50f, 60f, 1080, 2400))
+    }
+
+    @Test
     fun panel_size_always_positive() {
         val (w, h) = OverlayGeometry.panelSize(0, 0, 1080, 2400)
         assertTrue("尺寸必须为正，否则 WindowManager 直接抛异常", w >= 1 && h >= 1)

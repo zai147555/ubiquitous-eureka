@@ -26,6 +26,23 @@ object OverlayGeometry {
         return if (center < screenW / 2) 0 else maxX
     }
 
+    /** 面板可缩到的最小尺寸（再小就没法打字了） */
+    const val MIN_PANEL_W = 220
+    const val MIN_PANEL_H = 200
+
+    /**
+     * 拖动右下角把手时的尺寸计算。
+     *
+     * 下限用 [MIN_PANEL_W]/[MIN_PANEL_H]（否则输入框会被压没、没法再拖回来），
+     * 上限复用 [panelSize]（不能超出屏幕）。用"起始尺寸 + 累计位移"而不是逐帧增量，
+     * 这样手指抖动不会越积越偏。
+     */
+    fun resize(startW: Int, startH: Int, totalDx: Float, totalDy: Float, screenW: Int, screenH: Int): Pair<Int, Int> {
+        val w = (startW + totalDx).toInt().coerceAtLeast(MIN_PANEL_W)
+        val h = (startH + totalDy).toInt().coerceAtLeast(MIN_PANEL_H)
+        return panelSize(w, h, screenW, screenH)
+    }
+
     /**
      * 展开面板的尺寸：不超过屏幕的 92% 宽 / 72% 高。
      * 横屏与小平板上不夹取会直接溢出到屏幕外，输入框被顶没。

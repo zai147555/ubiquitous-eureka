@@ -86,7 +86,10 @@ fun NekoAppRoot() {
             seenId = lastSpokenId.value,
             newId = lastAi.id,
             newText = lastAi.text,
-            enabled = voiceStore.autoSpeak()
+            // ★ 悬浮窗在跑时由**悬浮窗**负责朗读（它有自己的 VoicePipeline）：
+            //   两边都念会让同一条回复念两遍；而且 App 在后台时这里本来也收不到更新。
+            enabled = voiceStore.autoSpeak() &&
+                !com.nekonyan.assistant.core.overlay.OverlayChatService.running
         )
         autoSpeakReady.value = true
         when (decision) {
