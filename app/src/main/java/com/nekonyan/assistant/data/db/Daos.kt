@@ -47,7 +47,6 @@ interface KnowledgeDao {
     @Query("SELECT * FROM knowledge_category WHERE enabledForAI = 1")
     suspend fun categoriesForAI(): List<KnowledgeCategory>
 
-    @Upsert
     /** 取任一个知识库 id：补建分类时要填**合法的** knowledgeBaseId（它本身也是外键，填 "" 照样违规） */
     @Query("SELECT id FROM knowledge_base LIMIT 1")
     suspend fun anyBaseId(): String?
@@ -56,6 +55,10 @@ interface KnowledgeDao {
     @Query("SELECT * FROM knowledge_category WHERE id = :id LIMIT 1")
     suspend fun categoryById(id: String): KnowledgeCategory?
 
+    // ★ 注解必须紧贴自己的方法：上一次我把新方法插在 @Upsert 下面，
+    //   结果这条 @Upsert 挂到了新方法上（Room: 一个方法同时有 @Upsert 与 @Query → KSP 报错），
+    //   而 upsertCategory 反而没了注解。
+    @Upsert
     suspend fun upsertCategory(category: KnowledgeCategory)
 
     /** 需求：分类可独立开关 */

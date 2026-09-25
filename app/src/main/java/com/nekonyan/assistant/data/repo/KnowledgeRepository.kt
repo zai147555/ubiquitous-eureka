@@ -72,7 +72,10 @@ class KnowledgeRepository(private val dao: KnowledgeDao) {
             return
         }
         runCatching {
-            dao.upsertCategory(KnowledgeCategory(id = categoryId, knowledgeBaseId = baseId))
+            dao.upsertCategory(
+                // name 是必填字段（没有默认值），补建时也得给一个能认出来的名字
+                KnowledgeCategory(id = categoryId, knowledgeBaseId = baseId, name = "已恢复的分类")
+            )
             NekoLog.warn(NekoLog.MODULE_STORE, "category_recreated", "分类不存在，已补建以免外键失败：$categoryId")
         }.onFailure { NekoLog.error(NekoLog.MODULE_STORE, "category_recreate_failed", it.javaClass.simpleName) }
     }
