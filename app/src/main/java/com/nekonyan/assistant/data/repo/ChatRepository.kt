@@ -79,15 +79,46 @@ class ChatRepository(
     }
 
     suspend fun appendMessage(sessionId: String, role: String, content: String): Message {
+        // ★ 外键保护（真机崩溃换来的）：
+        //   message.sessionId → session.id 是 CASCADE 外键。会话被删掉之后
+        //   （"删掉当前会话"，或**悬浮窗那份独立 ViewModel** 还攥着已被删除的 id），
+        //   直接插消息会抛 SQLiteConstraintException(FOREIGN KEY) 并把 App 崩掉：
+        //     FATAL: ConversationDao_Impl.insertMessage → FOREIGN KEY constraint failed
+        //   所以：先确保会话行存在，再插；插失败也**不允许把进程带走**。
+        ensureSessionRow(sessionId)
         val msg = Message(
             id = UUID.randomUUID().toString(),
             sessionId = sessionId,
             role = role,
             content = content
         )
-        dao.insertMessage(msg)
-        dao.touch(sessionId, System.currentTimeMillis())
+        runCatching { dao.insertMessage(msg) }.onFailure { e ->
+            NekoLog.error(NekoLog.MODULE_STORE, "insert_message_failed", e.javaClass.simpleName + ": " + e.message)
+            // 可能是并发删除，补建后再试一次；仍失败就如实记日志（消息不落库，但不崩）
+            runCatching {
+                ensureSessionRow(sessionId)
+                dao.insertMessage(msg)
+            }.onFailure {
+                NekoLog.error(NekoLog.MODULE_STORE, "insert_message_gave_up", "两次都失败：${it.message?.take(120)}")
+            }
+        }
+        runCatching { dao.touch(sessionId, System.currentTimeMillis()) }
         return msg
+    }
+
+    /**
+     * 确保会话行存在，不存在就补一条（标题用默认名）。
+     * 用实体自带的 mode 默认值，不额外引入模式常量。
+     */
+    private suspend fun ensureSessionRow(sessionId: String) {
+        if (sessionId.isBlank()) return
+        if (runCatching { dao.sessionById(sessionId) }.getOrNull() != null) return
+        runCatching {
+            dao.upsertSession(ConversationSession(id = sessionId, title = NEW_SESSION_TITLE))
+            NekoLog.warn(NekoLog.MODULE_STORE, "session_recreated", "会话不存在，已补建以免外键失败：$sessionId")
+        }.onFailure {
+            NekoLog.error(NekoLog.MODULE_STORE, "session_recreate_failed", it.javaClass.simpleName)
+        }
     }
 
     /** 首条用户消息决定会话标题（之后不再改动，避免每轮都写库） */
