@@ -74,6 +74,14 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
     /** 展开/收起：Compose 侧直接读这个状态 */
     private val expanded = mutableStateOf(false)
 
+    /** 主题：在 onCreate 里从 DataStore 读进 state，组合里只读 state（组合里碰 DataStore 崩了没法兜） */
+    private val appearanceState = mutableStateOf(AppearanceSettings())
+
+    /** 只用于把主题读进 state；随服务销毁取消 */
+    private val uiScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate
+    )
+
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
@@ -85,17 +93,42 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
         // 每次尝试先清掉上一轮的错误；**本轮产生的错误要留到最后**：
         // 曾经写成"成功启动后清空"，结果把刚记下的失败原因当场擦掉，用户仍然什么都看不到。
         _lastError.value = null
+        // 用户实测"开悬浮窗直接闪退"：与其猜是哪一步抛，不如**任何一步抛都别崩**，
+        // 把异常类名+位置显示到设置页，让故障自己说话。
+        try {
         lifecycleRegistry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.RESUMED }
         store = ViewModelStore()
         savedStateController = SavedStateRegistryController.create(this).apply { performRestore(null) }
         wm = getSystemService(WindowManager::class.java)
         // 独立实例：Service 比 Activity 活得久，不能引用界面那个（会被清掉）
         chatVm = ViewModelProvider(this, ChatViewModel.Factory)[ChatViewModel::class.java]
+        // 主题在组合之外读一次；失败也不影响气泡显示（退回默认主题）
+        uiScope.launch {
+            runCatching { ThemeStore(NekoApp.context()).settings.collect { appearanceState.value = it } }
+        }
         startForegroundSafely()
         attachOverlay()
         running = true
         _runningFlow.value = true
         NekoLog.info(NekoLog.MODULE_UI, "overlay_started", "悬浮窗聊天已启动")
+        } catch (t: Throwable) {
+            // 连 cause 一起带上：有些 ROM 把真实原因包在 cause 里
+            val detail = describe(t)
+            _lastError.value = "悬浮窗启动失败：$detail"
+            NekoLog.error(NekoLog.MODULE_UI, "overlay_start_failed", detail)
+            stopSelf()
+        }
+    }
+
+    /** 异常 → 一行可读、够定位的描述（类名 + 消息 + 第一个栈帧 + cause） */
+    private fun describe(t: Throwable): String {
+        val cause = t.cause
+        val head = "${t.javaClass.name}: ${t.message?.take(160)}"
+        val frame = t.stackTrace.firstOrNull()?.let { " @" + it.fileName + ":" + it.lineNumber } ?: ""
+        val tail = if (cause != null && cause !== t) {
+            "  ← " + cause.javaClass.name + ": " + cause.message?.take(120)
+        } else ""
+        return head + frame + tail
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -111,6 +144,7 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
     }
 
     override fun onDestroy() {
+        runCatching { uiScope.cancel() }
         running = false
         _runningFlow.value = false
         runCatching { overlayView?.let { wm.removeView(it) } }
@@ -188,12 +222,10 @@ class OverlayChatService : Service(), LifecycleOwner, ViewModelStoreOwner, Saved
                 // 组合期不写状态（会反复触发重组）：拿不到 VM 就什么都不画
                 if (vm != null) {
                     val chat by vm.state.collectAsState()
-                    val appearance by remember { ThemeStore(NekoApp.context()).settings }
-                        .collectAsState(initial = AppearanceSettings())
                     NekoTheme(
-                        themeId = appearance.themeId,
-                        fontScale = appearance.fontScale,
-                        motionLevel = appearance.motionLevel
+                        themeId = appearanceState.value.themeId,
+                        fontScale = appearanceState.value.fontScale,
+                        motionLevel = appearanceState.value.motionLevel
                     ) {
                         if (expanded.value) {
                             OverlayPanel(
