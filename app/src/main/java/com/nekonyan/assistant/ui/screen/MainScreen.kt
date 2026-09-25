@@ -55,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -251,7 +252,9 @@ fun MainScreen(
                         ChatBubble(
                             msg,
                             status = if (msg.fromUser) "已发送" else null,
-                            onSpeak = if (msg.fromUser) null else ({ onSpeak(msg.text) })
+                            // 直接传上面的稳定引用：原来写 ({ onSpeak(msg.text) })
+                            // 会让每个可见气泡在每次重组时都拿到新 lambda → 无法跳过重组
+                            onSpeak = if (msg.fromUser) null else onSpeak
                         )
                     }
 
@@ -436,7 +439,7 @@ data class ChatMessage(
 private fun ChatBubble(
     msg: ChatMessage,
     status: String? = null,
-    onSpeak: (() -> Unit)? = null
+    onSpeak: ((String) -> Unit)? = null
 ) {
     val alignment = if (msg.fromUser) Alignment.CenterEnd else Alignment.CenterStart
     val bg = if (msg.fromUser) {
@@ -449,16 +452,25 @@ private fun ChatBubble(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
+    // 需求：模式色边框 + 轻发光。用**带色阴影**而不是模糊，GPU 代价小得多。
+    val modeColor = com.nekonyan.assistant.ui.theme.LocalNekoExtraColors.current.modeBorder
+    val shape = RoundedCornerShape(
+        topStart = 18.dp,
+        topEnd = 18.dp,
+        bottomStart = if (msg.fromUser) 18.dp else 4.dp,
+        bottomEnd = if (msg.fromUser) 4.dp else 18.dp
+    )
+    val glow = if (msg.fromUser) {
+        Modifier
+    } else {
+        Modifier.shadow(6.dp, shape, ambientColor = modeColor, spotColor = modeColor)
+    }
     Box(Modifier.fillMaxWidth(), contentAlignment = alignment) {
         Surface(
             color = bg,
-            shape = RoundedCornerShape(
-                topStart = 18.dp,
-                topEnd = 18.dp,
-                bottomStart = if (msg.fromUser) 18.dp else 4.dp,
-                bottomEnd = if (msg.fromUser) 4.dp else 18.dp
-            ),
-            modifier = Modifier.fillMaxWidth(0.82f)
+            shape = shape,
+            border = if (msg.fromUser) null else androidx.compose.foundation.BorderStroke(1.dp, modeColor.copy(alpha = 0.45f)),
+            modifier = Modifier.fillMaxWidth(0.82f).then(glow)
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text(
@@ -468,7 +480,7 @@ private fun ChatBubble(
                 )
                 // 需求：助手说的话可以朗读（TTS + 可选 RVC 变声）
                 if (onSpeak != null) {
-                    IconButton(onClick = onSpeak, modifier = Modifier.padding(top = 2.dp)) {
+                    IconButton(onClick = { onSpeak(msg.text) }, modifier = Modifier.padding(top = 2.dp)) {
                         Icon(
                             Icons.Filled.VolumeUp,
                             contentDescription = "朗读这条消息",
