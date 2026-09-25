@@ -113,6 +113,63 @@ class TrainingCollector(private val context: Context) {
         }
     }
 
+    /**
+     * **手动**把用户选中的图片加入待传队列。
+     *
+     * 与自动采集的区别：**不走 [CollectPolicy] 的间隔/上限门限** ——
+     * 用户明确挑了这几张图，被"间隔未到""与最近画面相似"拦掉是荒谬的。
+     * 但保留内容哈希去重（同一张图重复选两次不会入队两次），
+     * 计数照常累加（这样界面上的"今日已采"仍然真实）。
+     *
+     * @return 是否入队（重复或写入失败为 false）
+     */
+    fun enqueueManual(image: ByteArray, source: String = "manual",
+                      nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (image.isEmpty()) return false
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(image).take(8).joinToString("") { "%02x".format(it) }
+        val name = "${digest}_${nowMs}_$source.jpg"
+        if (File(dir, name).exists()) return false          // 同一张图重复选 → 忽略
+        val u = usage()
+        return runCatching {
+            File(dir, name).writeBytes(image)
+            prefs.edit()
+                .putInt(K_TODAY_COUNT, u.todayCount + 1)
+                .putLong(K_TODAY_BYTES, u.todayBytes + image.size)
+                .apply()
+            NekoLog.info(NekoLog.MODULE_PROJECTION, "collect_manual_enqueue",
+                "$name（${image.size / 1024}KB）")
+            true
+        }.getOrElse {
+            NekoLog.error(NekoLog.MODULE_PROJECTION, "collect_manual_enqueue_failed", it.javaClass.simpleName)
+            false
+        }
+    }
+
+    /**
+     * 把用户选的原图压到适合上传的尺寸。
+     *
+     * 为什么必须压：手机原图动辄 5–15MB，而服务端单张上限是 8MB（tools/collect_server.py 的
+     * MAX_BYTES）—— 不压就会被 413 拒掉，而用户只会看到"上传失败"。
+     * 训练也用不到原图分辨率（YOLO 训练输入 640），2048 长边足够。
+     */
+    fun shrinkForUpload(raw: ByteArray, maxSide: Int = 2048, quality: Int = 85): ByteArray {
+        if (raw.isEmpty()) return raw
+        return runCatching {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return raw
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts) ?: return raw
+            val bos = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, bos)
+            bmp.recycle()
+            bos.toByteArray().takeIf { it.isNotEmpty() } ?: raw
+        }.getOrDefault(raw)
+    }
+
     /** 待传队列：张数与总字节（界面要显示，用户随时知道"还没传出去多少"） */
     fun pending(): Pair<Int, Long> {
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".jpg") } ?: return 0 to 0L
@@ -137,12 +194,16 @@ class TrainingCollector(private val context: Context) {
      * 地址与令牌**复用内置凭据**（与检测服务同一套）：不额外引入配置项，
      * 服务端只要在同一个 base 上实现 `POST /collect` 即可（见 docs/训练数据上传接口.md）。
      */
-    suspend fun uploadPending(maxPerRun: Int = 5): UploadResult = withContext(Dispatchers.IO) {
+    suspend fun uploadPending(maxPerRun: Int = 5, manual: Boolean = false): UploadResult = withContext(Dispatchers.IO) {
         val rules = rules()
         val wifi = onWifi()
-        val gate = CollectPolicy.shouldUploadNow(rules, wifi)
-        // withContext 的 lambda 不是 inline —— 裸 return 非法（CI 直接报 'return' is prohibited here）
-        if (gate is CollectPolicy.Decision.Skip) return@withContext UploadResult(0, 0, gate.reason)
+        // 手动上传（点了"立即上传"或刚选完图）**不受自动采集开关与"仅 Wi-Fi"限制** ——
+        // 这两个门限是给"后台自动传"设的，用户明确点了就该照做，否则只会让人困惑。
+        if (!manual) {
+            val gate = CollectPolicy.shouldUploadNow(rules, wifi)
+            // withContext 的 lambda 不是 inline —— 裸 return 非法（CI 直接报 'return' is prohibited here）
+            if (gate is CollectPolicy.Decision.Skip) return@withContext UploadResult(0, 0, gate.reason)
+        }
 
         val creds = BuiltinSecretStore.load(context)
             ?: return@withContext UploadResult(0, 0, "内置凭据里没有服务地址，无法上传")

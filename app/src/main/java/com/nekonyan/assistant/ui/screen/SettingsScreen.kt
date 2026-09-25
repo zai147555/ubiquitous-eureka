@@ -31,6 +31,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import com.nekonyan.assistant.core.log.NekoLog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -239,11 +242,48 @@ fun SettingsScreen(
                 actionMsg?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                // 手动选图上传：**不受自动采集的策略门限**（用户明确挑的图不该被
+                // "间隔未到/与最近画面相似"拦掉），但同样按内容哈希去重、同样计入统计。
+                val pickImages = androidx.activity.compose.rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+                ) { uris ->
+                    if (uris.isNotEmpty()) {
+                        cScope.launch {
+                            actionMsg = "正在读取 ${uris.size} 张图…"
+                            val added = withContext(Dispatchers.IO) {
+                                var n = 0
+                                uris.forEach { u ->
+                                    runCatching {
+                                        cCtx.contentResolver.openInputStream(u)?.use { ins ->
+                                            val raw = ins.readBytes()
+                                            // 原图动辄 5–15MB，服务端单张上限 8MB → 先压
+                                            val jpeg = collector.shrinkForUpload(raw)
+                                            if (collector.enqueueManual(jpeg, "manual")) n++
+                                        }
+                                    }.onFailure {
+                                        NekoLog.warn(NekoLog.MODULE_UI, "pick_image_failed", it.javaClass.simpleName)
+                                    }
+                                }
+                                n
+                            }
+                            actionMsg = "已加入 $added 张（重复或读取失败的已跳过）"
+                            refresh()
+                            if (added > 0) {
+                                val r = collector.uploadPending(manual = true)
+                                actionMsg = "已加入 $added 张；${r.message}"
+                                refresh()
+                            }
+                        }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = { runCatching { pickImages.launch(arrayOf("image/*")) } }) {
+                        Text("选择图片上传")
+                    }
                     TextButton(onClick = {
                         cScope.launch {
                             actionMsg = "上传中…"
-                            val r = collector.uploadPending()
+                            val r = collector.uploadPending(manual = true)
                             actionMsg = r.message
                             refresh()
                         }

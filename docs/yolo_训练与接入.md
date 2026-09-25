@@ -74,6 +74,28 @@ names:
 
 ---
 
+## 2.5 一键跑完（推荐）
+
+采集回来的样本可以直接一条命令跑完"体检 → 切分 → 训练 → 双导出 → 发布目录"：
+
+```bash
+# 先用现有模型预标注，再训练（推荐；已标注过就加 --skip-prelabel）
+tools/train_yolo.sh --images ./collected --prelabel-model runs/nekonyan/weights/best.pt
+
+# 服务端有 GPU：换大模型、更大输入（手机端仍可用小模型，两端不必相同）
+tools/train_yolo.sh --images ./collected --base yolo11s.pt --imgsz 960 --device 0 --epochs 150
+```
+
+脚本会做这几件容易漏的事：
+  · **数据体检**：图片/标签数量、空标签（背景负样本）占比、类别 id 分布、格式异常行；
+  · **按来源目录切分** train/val（每 5 个来源取 1 个作验证）—— 不随机切帧，
+    否则相邻帧分别进两边，验证指标虚高、上线才发现不行；
+  · `data.yaml` 的类别顺序**取自基座模型**，导出后按同一顺序生成 `labels.txt`
+    （顺序错位的表现是"框位置对、类别名整体错位"，最难查）；
+  · 产出 `release/<时间>/`：`yolo11n.param` / `.bin`（改名成 App 认的家族名）、
+    `labels.txt`、`manifest.json`（含 sha256 与类别数）、`best.pt`，
+    并打印"服务端换权重 + 手机端发布热更新"的下一步。
+
 ## 3. 训练
 
 ```bash
