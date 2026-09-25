@@ -1,5 +1,6 @@
 package com.nekonyan.assistant.data.repo
 
+import com.nekonyan.assistant.core.log.NekoLog
 import com.nekonyan.assistant.data.db.KnowledgeCategory
 import com.nekonyan.assistant.data.db.KnowledgeDao
 import com.nekonyan.assistant.data.db.KnowledgeItem
@@ -54,7 +55,30 @@ class KnowledgeRepository(private val dao: KnowledgeDao) {
 
     suspend fun deleteCategory(category: KnowledgeCategory) = dao.deleteCategory(category)
 
+    /**
+     * 确保分类行存在，否则给这个分类插条目会踩外键（knowledge_item.categoryId → category.id），
+     * 抛 SQLiteConstraintException 并把 App 崩掉 —— Message 那张表已经真机崩过一次
+     * （见 ChatRepository.appendMessage 的注释），这里是同一类问题的另一处入口：
+     * 删掉分类之后界面若还拿着旧 id 去加条目就会命中。
+     */
+    private suspend fun ensureCategoryRow(categoryId: String) {
+        if (categoryId.isBlank()) return
+        if (runCatching { dao.categoryById(categoryId) }.getOrNull() != null) return
+        // 注意：knowledgeBaseId 本身也是外键，**不能**随手填 "" —— 那样补建出来的分类
+        // 自己就违规，runCatching 一吞，外键问题原样留着。所以先取一个真实的知识库 id。
+        val baseId = runCatching { dao.anyBaseId() }.getOrNull()
+        if (baseId.isNullOrBlank()) {
+            NekoLog.error(NekoLog.MODULE_STORE, "category_guard_no_base", "库里没有知识库，无法补建分类：$categoryId")
+            return
+        }
+        runCatching {
+            dao.upsertCategory(KnowledgeCategory(id = categoryId, knowledgeBaseId = baseId))
+            NekoLog.warn(NekoLog.MODULE_STORE, "category_recreated", "分类不存在，已补建以免外键失败：$categoryId")
+        }.onFailure { NekoLog.error(NekoLog.MODULE_STORE, "category_recreate_failed", it.javaClass.simpleName) }
+    }
+
     suspend fun addTextItem(categoryId: String, text: String): String {
+        ensureCategoryRow(categoryId)
         val id = newId("item")
         dao.upsertItem(
             KnowledgeItem(
@@ -68,6 +92,7 @@ class KnowledgeRepository(private val dao: KnowledgeDao) {
     }
 
     suspend fun addImageItem(categoryId: String, imageUri: String, caption: String = ""): String {
+        ensureCategoryRow(categoryId)
         val id = newId("item")
         dao.upsertItem(
             KnowledgeItem(

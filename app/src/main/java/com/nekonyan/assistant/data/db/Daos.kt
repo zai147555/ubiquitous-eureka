@@ -48,6 +48,14 @@ interface KnowledgeDao {
     suspend fun categoriesForAI(): List<KnowledgeCategory>
 
     @Upsert
+    /** 取任一个知识库 id：补建分类时要填**合法的** knowledgeBaseId（它本身也是外键，填 "" 照样违规） */
+    @Query("SELECT id FROM knowledge_base LIMIT 1")
+    suspend fun anyBaseId(): String?
+
+    /** 按 id 取分类（插条目前用它确保父行存在，避免外键悬空把 App 崩掉） */
+    @Query("SELECT * FROM knowledge_category WHERE id = :id LIMIT 1")
+    suspend fun categoryById(id: String): KnowledgeCategory?
+
     suspend fun upsertCategory(category: KnowledgeCategory)
 
     /** 需求：分类可独立开关 */
