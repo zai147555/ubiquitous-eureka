@@ -88,7 +88,16 @@ fun AnnotateScreen(onBack: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     val progress by collector.progress.collectAsStateWithLifecycle()
 
-    val labels = remember { NcnnDetector.labels.ifEmpty { listOf("目标0", "目标1", "目标2") } }
+    // 类别名：内置 COCO 模型翻成中文；用户导入的模型原样保留。
+    // 再叠加"用户自己填的类别"（持久化，下次还在）—— 顺序决定 class id，不能乱。
+    val modelLabels = remember {
+        com.nekonyan.assistant.core.annot.CocoZh.localize(
+            NcnnDetector.labels.ifEmpty { listOf("目标0") }
+        )
+    }
+    var extraNames by remember { mutableStateOf(loadExtraClasses(ctx)) }
+    val classes = remember(modelLabels, extraNames) { modelLabels + extraNames }
+    var newClsText by remember { mutableStateOf("") }
     val current: File? = files.getOrNull(idx)
 
     // 换张就重新载入：已有标签优先，没有才跑端上预标注
@@ -207,7 +216,7 @@ fun AnnotateScreen(onBack: () -> Unit) {
                     .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                labels.take(60).forEachIndexed { i, name ->
+                classes.take(80).forEachIndexed { i, name ->
                     FilterChip(
                         selected = cls == i,
                         onClick = {
@@ -217,6 +226,35 @@ fun AnnotateScreen(onBack: () -> Unit) {
                         label = { Text(name.take(10)) }
                     )
                 }
+            }
+
+            // ---- 自己填类别名（需求：可以自己填写标注内容）----
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = newClsText,
+                    onValueChange = { newClsText = it },
+                    label = { Text("自己填类别名（如：敌人 / 物资）") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Button(
+                    onClick = {
+                        val n = newClsText.trim()
+                        if (n.isNotEmpty() && !classes.contains(n)) {
+                            extraNames = extraNames + n
+                            saveExtraClasses(ctx, extraNames)
+                            cls = classes.size          // 选中刚加的这个
+                            msg = "已添加类别「$n」（class id = ${classes.size}）"
+                            newClsText = ""
+                        }
+                    }
+                ) { Text("加类别") }
             }
 
             // ---- 操作 ----
@@ -233,7 +271,8 @@ fun AnnotateScreen(onBack: () -> Unit) {
                     enabled = selected != null
                 ) { Text("删除框") }
                 OutlinedButton(onClick = { if (idx < files.size - 1) idx++ else msg = "已经是最后一张" }) { Text("跳过") }
-                Button(onClick = { save(advance = true) }, enabled = !busy) { Text("保存并下一张") }
+                // 文案短一点：截图里「保存并下一张」被挤成两行 ✗
+                Button(onClick = { save(advance = true) }, enabled = !busy) { Text("保存") }
             }
             Row(
                 Modifier
@@ -261,13 +300,18 @@ fun AnnotateScreen(onBack: () -> Unit) {
                 ) { Text("重新预标注") }
                 OutlinedButton(onClick = { save(advance = false) }, enabled = !busy) { Text("只保存") }
                 Button(
-                    onClick = { collector.startUpload(); msg = "已提交上传（后台进行，可离开本页）" },
+                    onClick = {
+                        // 类别名必须随上传一起送：YOLO 标签里只有 class id，
+                        // 服务端拿不到名字的话，自建类别（敌人/物资…）就无从解释 ✗
+                        collector.startUpload(names = classes)
+                        msg = "已提交上传（后台进行，可离开本页）"
+                    },
                     enabled = !busy
                 ) { Text("上传全部") }
             }
             Text(
-                "手势：空白处拖 = 画新框；点框 = 选中；拖框内 = 移动；拖右下角 = 缩放。" +
-                    "空标签也是一份有效数据（背景负样本）。",
+                "手势：空白处拖 = 画新框；点框 = 选中；拖框内 = 移动；拖右下角 = 缩放；" +
+                    "「保存」会自动跳下一张。空标签也是一份有效数据（背景负样本）。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -400,6 +444,19 @@ private fun AnnotateCanvas(
             }
         }
     }
+}
+
+private const val PREFS = "nekonyan_annot"
+
+/** 读用户自建的类别名（模型自带的那些不入库，避免模型换了名字还残留） */
+private fun loadExtraClasses(ctx: android.content.Context): List<String> =
+    ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+        .getString("extra_classes", "").orEmpty()
+        .split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+
+private fun saveExtraClasses(ctx: android.content.Context, names: List<String>) {
+    ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+        .edit().putString("extra_classes", names.joinToString("\n")).apply()
 }
 
 /** 标注用的解码：长边限制在 1600（原图 1080×2400 直接解会占十几 MB，而模型本来也只吃 640） */

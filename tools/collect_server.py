@@ -45,6 +45,7 @@ def _check(token: str | None) -> None:
 async def collect(
     source: str = Form("screen"),
     label: str = Form(""),
+    names: str = Form(""),
     image: UploadFile = File(...),
     x_api_token: str | None = Header(default=None, alias="X-API-Token"),
 ):
@@ -75,6 +76,12 @@ async def collect(
     label_path = os.path.splitext(path)[0] + ".txt"
     with open(label_path, "w", encoding="utf-8") as f:
         f.write(label)
+
+    # 类别名表（按 class id 顺序，来自 App 标注页）：标签里只有 id，没有这张表
+    # 服务端就无法解释自建类别（敌人/物资…）。整批上传每次都带，直接覆盖写即可（幂等）。
+    if names.strip():
+        with open(os.path.join(DATA_DIR, "classes.txt"), "w", encoding="utf-8") as f:
+            f.write(names.strip() + "\n")
 
     total = sum(len(fs) for _, _, fs in os.walk(DATA_DIR))
     labeled = sum(1 for r, _, fs in os.walk(DATA_DIR) for x in fs if x.endswith(".txt"))

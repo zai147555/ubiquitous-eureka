@@ -228,7 +228,11 @@ class TrainingCollector(private val context: Context) {
      * 地址与令牌**复用内置凭据**（与检测服务同一套）：不额外引入配置项，
      * 服务端只要在同一个 base 上实现 `POST /collect` 即可（见 docs/训练数据上传接口.md）。
      */
-    suspend fun uploadPending(maxPerRun: Int = 100, manual: Boolean = false): UploadResult = withContext(Dispatchers.IO) {
+    suspend fun uploadPending(
+        maxPerRun: Int = 100,
+        manual: Boolean = false,
+        names: List<String> = emptyList()
+    ): UploadResult = withContext(Dispatchers.IO) {
         val rules = rules()
         val wifi = onWifi()
         // 手动上传（点了"立即上传"或刚选完图）**不受自动采集开关与"仅 Wi-Fi"限制** ——
@@ -261,6 +265,9 @@ class TrainingCollector(private val context: Context) {
                 val body = MultipartBody.Builder().setType(MultipartBody.FORM)
                     .addFormDataPart("source", f.name.substringAfterLast('_').removeSuffix(".jpg"))
                     .addFormDataPart("label", label ?: "")
+                    // 类别名（按 class id 顺序）一起送：标签里只有 id，没有这张表，
+                    // 服务端就无法解释自建类别（敌人/物资…）
+                    .apply { if (names.isNotEmpty()) addFormDataPart("names", names.joinToString("\n")) }
                     .addFormDataPart("image", f.name, f.asRequestBody("image/jpeg".toMediaType()))
                     .build()
                 val req = Request.Builder().url(url).header("X-API-Token", token).post(body).build()
@@ -293,7 +300,7 @@ class TrainingCollector(private val context: Context) {
     private val _progress = kotlinx.coroutines.flow.MutableStateFlow("")
     val progress: kotlinx.coroutines.flow.StateFlow<String> = _progress
 
-    fun startUpload(maxPerRun: Int = 100) {
+    fun startUpload(maxPerRun: Int = 100, names: List<String> = emptyList()) {
         uploadScope.launch {
             if (_progress.value.isNotEmpty()) return@launch      // 已经在传了，别叠加
             _progress.value = "准备上传…"
@@ -301,7 +308,7 @@ class TrainingCollector(private val context: Context) {
             var done = 0
             try {
                 while (done < n) {
-                    val r = uploadPending(maxPerRun = minOf(100, n - done), manual = true)
+                    val r = uploadPending(maxPerRun = minOf(100, n - done), manual = true, names = names)
                     if (r.ok == 0) { _progress.value = r.message; return@launch }
                     done += r.ok
                     _progress.value = "已上传 $done / $n 张"
