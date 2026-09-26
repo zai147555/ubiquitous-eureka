@@ -13,8 +13,8 @@ android {
         applicationId = "com.nekonyan.assistant"
         minSdk = 31            // 需求：Android 12+（API 31+）
         targetSdk = 35
-        versionCode = 43
-        versionName = "0.28.1"
+        versionCode = 44
+        versionName = "0.29.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {

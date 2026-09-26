@@ -309,7 +309,24 @@ class ChatViewModel(
             val text = if (ok) {
                 NekoLog.info(NekoLog.MODULE_STORE, if (isImage) "chat_photo_import" else "chat_file_import",
                     "$name ${target.length() / 1024}KB")
-                "${if (isImage) "🖼 已导入图片" else "📎 已导入文件"}：$name（已存入应用私有目录）"
+                val base = "${if (isImage) "🖼 已导入图片" else "📎 已导入文件"}：$name（已存入应用私有目录）"
+                // 设置里开了「用 DS 云端识别图片」→ 立刻让云端看一眼，把描述并进同一条消息
+                // （图片只能出现在 user 消息里，所以不能单独塞给模型当上下文）
+                if (isImage && com.nekonyan.assistant.core.net.VisionSettings.enabled(ctx)) {
+                    val shot = runCatching { target.readBytes() }.getOrNull()
+                    if (shot == null) {
+                        "$base\n（云端识别跳过：读不到文件）"
+                    } else {
+                        when (val r = repo.describeImage(shot)) {
+                            is com.nekonyan.assistant.core.net.DeepSeekVision.Result.Ok ->
+                                "$base\n【云端识别】${r.text}"
+                            is com.nekonyan.assistant.core.net.DeepSeekVision.Result.Err ->
+                                "$base\n（云端识别未成功：${r.message}）"
+                        }
+                    }
+                } else {
+                    base
+                }
             } else {
                 NekoLog.warn(NekoLog.MODULE_STORE, "chat_import_failed", name)
                 "❌ 导入失败：$name"

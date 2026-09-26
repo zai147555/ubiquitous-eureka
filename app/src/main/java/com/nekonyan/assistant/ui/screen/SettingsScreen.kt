@@ -179,6 +179,32 @@ fun SettingsScreen(
                 )
             }
 
+            // ---------------- 图片识别 ----------------
+            GroupTitle("图片识别")
+            SettingBlock("云端识图（DeepSeek 视觉）") {
+                val vCtx = androidx.compose.ui.platform.LocalContext.current
+                var cloudVision by remember {
+                    mutableStateOf(com.nekonyan.assistant.core.net.VisionSettings.enabled(vCtx))
+                }
+                SwitchRow(
+                    title = "用 DS 云端识别图片",
+                    checked = cloudVision,
+                    onCheckedChange = { on ->
+                        cloudVision = on
+                        com.nekonyan.assistant.core.net.VisionSettings.set(vCtx, on)
+                    }
+                )
+                Text(
+                    "开启后，你导入的图片会连同问题一起发给 DeepSeek 做识别，结果直接写进对话里" +
+                        "（比如「截图里写了什么」）。用的是视觉模型 deepseek-flash —— " +
+                        "你在配置页填的若是 deepseek-chat 这种纯文本模型，本开关会自动改用视觉模型。" +
+                        "费用按图片折算 token 计（每张最多约 1024 token）。默认关闭。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
             // ---------------- 训练数据采集 ----------------
             GroupTitle("训练数据采集")
             SettingBlock("采集屏幕样本（给模型训练用）") {

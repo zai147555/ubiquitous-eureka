@@ -6,6 +6,7 @@ import com.nekonyan.assistant.core.chat.PromptComposer
 import com.nekonyan.assistant.core.chat.PromptMessage
 import com.nekonyan.assistant.core.net.ChatOutcome
 import com.nekonyan.assistant.core.net.DeepSeekClient
+import com.nekonyan.assistant.core.net.DeepSeekVision
 import com.nekonyan.assistant.data.db.ConversationDao
 import com.nekonyan.assistant.data.db.ConversationSession
 import com.nekonyan.assistant.data.db.Message
@@ -39,6 +40,13 @@ class ChatRepository(
     fun saveConfig(config: ChatConfig) = configStore.save(config)
 
     fun hasApiKey(): Boolean = configStore.hasApiKey()
+
+    /**
+     * 云端识别一张图片（设置里开了「用 DS 云端识别图片」才会被调用）。
+     * 放在仓库层是因为配置在这里（config()），界面层不该自己去找 API Key。
+     */
+    suspend fun describeImage(jpeg: ByteArray): DeepSeekVision.Result =
+        DeepSeekVision.describe(config(), jpeg)
 
     fun clearApiKey() = configStore.clearApiKey()
 
